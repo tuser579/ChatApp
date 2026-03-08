@@ -1,22 +1,60 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { connectSocket, getSocket } from "@/lib/socket";
 
+// ✅ Ring tone for receiver using Web Audio API
+function startRinging() {
+  let stopped  = false;
+  let ctx      = null;
+  let timerId  = null;
+
+  function ring() {
+    if (stopped) return;
+    try {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === "suspended") ctx.resume();
+
+      // Two-tone ring (like a phone)
+      [[800, 0, 0.3], [640, 0.35, 0.3]].forEach(([freq, delay, dur]) => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+        gain.gain.setValueAtTime(0,   ctx.currentTime + delay);
+        gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + delay + 0.05);
+        gain.gain.setValueAtTime(0.4, ctx.currentTime + delay + dur - 0.05);
+        gain.gain.linearRampToValueAtTime(0,   ctx.currentTime + delay + dur);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime  + delay + dur);
+      });
+    } catch {}
+    if (!stopped) timerId = setTimeout(ring, 3000);
+  }
+
+  ring();
+
+  return function stop() {
+    stopped = true;
+    if (timerId) clearTimeout(timerId);
+    if (ctx) { ctx.close().catch(() => {}); ctx = null; }
+  };
+}
+
 export default function IncomingCallAlert() {
-  const router     = useRouter();
-  const [incoming, setIncoming] = useState(null);
+  const router      = useRouter();
+  const [incoming,  setIncoming]  = useState(null);
+  const stopRingRef = useRef(null);
 
   useEffect(() => {
     const me   = JSON.parse(localStorage.getItem("user") || "{}");
     const myId = me?.id || me?._id;
     if (!myId) return;
 
-    console.log("🔔 IncomingCallAlert init for userId:", myId);
-
-    // ✅ Connect immediately and keep alive
     connectSocket(myId).then((socket) => {
       console.log("🔔 IncomingCallAlert socket ready:", socket.id);
       registerListeners(socket);
@@ -29,26 +67,38 @@ export default function IncomingCallAlert() {
 
       socket.on("call:incoming", ({ from, fromName, offer, callType }) => {
         console.log("📞 INCOMING CALL:", { from, fromName, callType });
+        // ✅ Start ringing
+        if (stopRingRef.current) stopRingRef.current();
+        stopRingRef.current = startRinging();
         setIncoming({ from, fromName, offer, callType });
       });
 
-      socket.on("call:end",      () => setIncoming(null));
-      socket.on("call:rejected", () => setIncoming(null));
-
-      // ✅ Re-register after reconnect
-      socket.on("reconnect", () => {
-        console.log("🔄 Reconnected — re-registering call listeners");
-        registerListeners(socket);
+      socket.on("call:end", () => {
+        stopRinging();
+        setIncoming(null);
       });
+
+      socket.on("call:rejected", () => {
+        stopRinging();
+        setIncoming(null);
+      });
+
+      socket.on("reconnect", () => registerListeners(socket));
     }
 
-    // ✅ Do NOT disconnect on unmount — keep socket alive for calls
-    return () => {};
+    return () => { stopRinging(); };
   }, []);
+
+  function stopRinging() {
+    if (stopRingRef.current) {
+      stopRingRef.current();
+      stopRingRef.current = null;
+    }
+  }
 
   function accept() {
     if (!incoming) return;
-    console.log("✅ Accepting call:", incoming);
+    stopRinging();
     sessionStorage.setItem("incomingCall", JSON.stringify({
       from:     incoming.from,
       fromName: incoming.fromName,
@@ -60,6 +110,7 @@ export default function IncomingCallAlert() {
   }
 
   function decline() {
+    stopRinging();
     const s = getSocket();
     s?.emit("call:reject", { to: incoming?.from });
     setIncoming(null);
@@ -69,20 +120,22 @@ export default function IncomingCallAlert() {
     <AnimatePresence>
       {incoming && (
         <motion.div
-          initial={{ opacity:0, y:-100 }}
-          animate={{ opacity:1, y:0    }}
-          exit={{   opacity:0, y:-100  }}
+          initial={{ opacity:0, y:-100, scale:0.9 }}
+          animate={{ opacity:1, y:0,    scale:1    }}
+          exit={{   opacity:0, y:-100, scale:0.9   }}
           transition={{ type:"spring", damping:20, stiffness:300 }}
-          className="fixed top-4 left-1/2 z-[9999] w-80 rounded-2xl p-4"
+          className="fixed z-[9999] w-80 rounded-2xl p-4"
           style={{
-            transform:  "translateX(-50%)",
+            top:        "16px",
+            left:       "50%",
+            translateX: "-50%",
             background: "var(--bg-card)",
             border:     "1px solid var(--border)",
             boxShadow:  "0 8px 40px rgba(0,0,0,0.6)",
           }}>
-          <div className="flex items-center gap-3">
 
-            {/* Pulsing ring */}
+          <div className="flex items-center gap-3">
+            {/* Pulsing icon */}
             <div className="relative shrink-0 w-12 h-12">
               <motion.div
                 animate={{ scale:[1,1.6,1], opacity:[0.4,0,0.4] }}
