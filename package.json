@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node server.js",
+    "dev": "node server.cjs",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
+    "start": "node server.cjs",
     "lint": "eslint"
   },
   "dependencies": {
@@ -28,5 +28,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
