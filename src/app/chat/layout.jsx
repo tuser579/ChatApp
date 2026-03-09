@@ -57,6 +57,13 @@ export default function ChatLayout({ children }) {
     if (myId) {
       connectSocket(myId).then(socket => {
         console.log("💬 Chat layout socket connected:", socket.id);
+
+        // ✅ FIX: Auto-reload conversations when a message is sent in ANY conversation
+        socket.off("conversation:update");
+        socket.on("conversation:update", () => {
+          console.log("🔄 Auto-reloading conversations...");
+          fetchConvos(t);
+        });
       });
     }
   }, []);

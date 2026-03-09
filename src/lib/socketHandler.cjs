@@ -64,6 +64,14 @@ module.exports = function socketHandler(io) {
         });
         const populated = await msg.populate("sender", "name avatar");
         io.to(conversationId).emit("message:new", populated.toObject());
+
+        // ✅ Emits event to refresh conversations list for all participants
+        const updatedConvo = await Conversation.findById(conversationId).populate("participants", "id");
+        if (updatedConvo) {
+          updatedConvo.participants.forEach(p => {
+            io.to(p._id.toString()).emit("conversation:update");
+          });
+        }
       } catch (e) { console.error("❌ message:send:", e.message); }
     });
 
