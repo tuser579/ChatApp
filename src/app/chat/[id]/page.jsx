@@ -45,12 +45,13 @@ function MessageBubble({ msg, isMe }) {
           {msg.type === "image" && (
             <div className="relative group">
               <img src={msg.mediaUrl} alt="img" className="rounded-xl max-w-full mb-1" style={{ maxHeight:260 }} />
-              <a href={msg.mediaUrl} target="_blank" rel="noreferrer"
+              <button 
+                onClick={(e) => { e.stopPropagation(); window.open(msg.mediaUrl, "_blank"); }}
                 className="absolute bottom-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 text-xs font-semibold backdrop-blur-md"
                 style={{ background:"rgba(0,0,0,0.6)", color:"white" }}>
                 <ExternalLink className="w-3.5 h-3.5" />
                 Open
-              </a>
+              </button>
             </div>
           )}
           {msg.type === "audio" && (
@@ -65,11 +66,14 @@ function MessageBubble({ msg, isMe }) {
             </div>
           )}
           {msg.type === "file" && (
-            <a href={msg.mediaUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm">
+            <button 
+              onClick={(e) => { e.stopPropagation(); window.open(msg.mediaUrl, "_blank"); }} 
+              className="flex items-center gap-2 text-sm hover:opacity-80 transition"
+            >
               <FileIcon className="w-4 h-4 shrink-0" />
-              <span className="truncate max-w-32">{msg.fileName||"File"}</span>
+              <span className="truncate max-w-32 text-left">{msg.fileName||"File"}</span>
               <Download className="w-3.5 h-3.5 shrink-0" />
-            </a>
+            </button>
           )}
           {(msg.type==="text"||!msg.type) && (
             <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
