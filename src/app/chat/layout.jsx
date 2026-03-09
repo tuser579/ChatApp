@@ -42,6 +42,7 @@ export default function ChatLayout({ children }) {
   const [showNew,   setShowNew]   = useState(false);
   const [showMenu,  setShowMenu]  = useState(false);
   const [searching, setSearching] = useState(false);
+  const [convoSearch, setConvoSearch] = useState("");
 
   useEffect(() => {
     const t = localStorage.getItem("token") || "";
@@ -217,6 +218,7 @@ export default function ChatLayout({ children }) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
               style={{ color:"var(--fg-subtle)" }} />
             <input placeholder="Search conversations..."
+              value={convoSearch} onChange={e => setConvoSearch(e.target.value)}
               className="w-full pl-9 pr-4 py-2 rounded-xl text-sm"
               style={{ background:"var(--bg)", border:"1px solid var(--border)", color:"var(--fg)" }} />
           </div>
@@ -234,32 +236,50 @@ export default function ChatLayout({ children }) {
                 No conversations yet.<br />Click + to start one.
               </p>
             </div>
-          ) : convos.map(convo => {
-            const other    = getOther(convo);
-            const isActive = convo._id === activeId;
-            return (
-              <Link key={convo._id} href={`/chat/${convo._id}`}>
-                <motion.div whileHover={{ x:2 }}
-                  className="flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors"
-                  style={{ background:isActive ? "var(--bg-active)" : "transparent" }}>
-                  <Avatar name={other?.name} avatar={other?.avatar} size={44} online={other?.isOnline} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <p className="text-sm font-semibold truncate" style={{ color:"var(--fg)" }}>
-                        {other?.name || "Unknown"}
-                      </p>
-                      <span className="text-xs shrink-0 ml-2" style={{ color:"var(--fg-subtle)" }}>
-                        {formatTime(convo.updatedAt)}
-                      </span>
-                    </div>
-                    <p className="text-xs truncate" style={{ color:"var(--fg-muted)" }}>
-                      {convo.lastMessage?.content || "Start a conversation"}
-                    </p>
-                  </div>
-                </motion.div>
-              </Link>
-            );
-          })}
+          ) : (
+            (() => {
+              const filteredConvos = convos.filter(convo => {
+                const other = getOther(convo);
+                if (!convoSearch) return true;
+                return other?.name?.toLowerCase().includes(convoSearch.toLowerCase());
+              });
+
+              if (filteredConvos.length === 0 && convoSearch) {
+                return (
+                  <p className="text-center py-8 text-sm" style={{ color:"var(--fg-muted)" }}>
+                    No conversations match "{convoSearch}"
+                  </p>
+                );
+              }
+
+              return filteredConvos.map(convo => {
+                const other    = getOther(convo);
+                const isActive = convo._id === activeId;
+                return (
+                  <Link key={convo._id} href={`/chat/${convo._id}`}>
+                    <motion.div whileHover={{ x:2 }}
+                      className="flex items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors"
+                      style={{ background:isActive ? "var(--bg-active)" : "transparent" }}>
+                      <Avatar name={other?.name} avatar={other?.avatar} size={44} online={other?.isOnline} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <p className="text-sm font-semibold truncate" style={{ color:"var(--fg)" }}>
+                            {other?.name || "Unknown"}
+                          </p>
+                          <span className="text-xs shrink-0 ml-2" style={{ color:"var(--fg-subtle)" }}>
+                            {formatTime(convo.updatedAt)}
+                          </span>
+                        </div>
+                        <p className="text-xs truncate" style={{ color:"var(--fg-muted)" }}>
+                          {convo.lastMessage?.content || "Start a conversation"}
+                        </p>
+                      </div>
+                    </motion.div>
+                  </Link>
+                );
+              });
+            })()
+          )}
         </div>
       </aside>
 
