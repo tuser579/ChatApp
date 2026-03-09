@@ -4,7 +4,7 @@ import { useRouter, useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, Send, Paperclip, Phone, Video, MoreVertical,
-  Check, CheckCheck, File as FileIcon, Mic, Loader2, Play, Pause, Download
+  Check, CheckCheck, File as FileIcon, Mic, Loader2, Play, Pause, Download, ExternalLink
 } from "lucide-react";
 import Link from "next/link";
 import { connectSocket, getSocket } from "@/lib/socket";
@@ -43,7 +43,15 @@ function MessageBubble({ msg, isMe }) {
             borderBottomLeftRadius:  !isMe?4:undefined,
           }}>
           {msg.type === "image" && (
-            <img src={msg.mediaUrl} alt="img" className="rounded-xl max-w-full mb-1" style={{ maxHeight:260 }} />
+            <div className="relative group">
+              <img src={msg.mediaUrl} alt="img" className="rounded-xl max-w-full mb-1" style={{ maxHeight:260 }} />
+              <a href={msg.mediaUrl} target="_blank" rel="noreferrer"
+                className="absolute bottom-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 text-xs font-semibold backdrop-blur-md"
+                style={{ background:"rgba(0,0,0,0.6)", color:"white" }}>
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open
+              </a>
+            </div>
           )}
           {msg.type === "audio" && (
             <div className="flex items-center gap-3 min-w-32">
