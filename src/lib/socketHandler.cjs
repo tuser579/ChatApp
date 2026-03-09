@@ -5,6 +5,7 @@ const { mongoConnect } = require("./mongoConnect.cjs");
 
 const userSockets = new Map(); // userId → Set of socketIds
 const pendingCalls = new Map(); // receiverId → callPayload
+const activeCalls  = new Map(); // userId → peerId (to track active calls for auto-cleanup)
 
 module.exports = function socketHandler(io) {
   io.on("connection", async (socket) => {
@@ -137,6 +138,11 @@ module.exports = function socketHandler(io) {
     socket.on("call:answer", ({ to, answer }) => {
       console.log(`✅ call:answer: ${userId} → ${to}`);
       pendingCalls.delete(userId); // answered — clear pending
+      
+      // ✅ Track active call for auto-cleanup on disconnect
+      activeCalls.set(userId, to);
+      activeCalls.set(to, userId);
+      
       io.to(to).emit("call:answer", { answer });
     });
 
@@ -146,20 +152,36 @@ module.exports = function socketHandler(io) {
 
     socket.on("call:end", ({ to }) => {
       console.log(`📵 call:end: ${userId} → ${to}`);
-      pendingCalls.delete(to);   // call ended — clear pending
+      pendingCalls.delete(to);
+      activeCalls.delete(userId);
+      activeCalls.delete(to);
       io.to(to).emit("call:end");
     });
 
     socket.on("call:reject", ({ to }) => {
       console.log(`🚫 call:reject: ${userId} → ${to}`);
       pendingCalls.delete(userId);
+      activeCalls.delete(userId);
+      activeCalls.delete(to);
       io.to(to).emit("call:rejected");
     });
 
     socket.on("disconnect", async () => {
-      userSockets.get(userId)?.delete(socket.id);
-      if (userSockets.get(userId)?.size === 0) userSockets.delete(userId);
+      const socketSet = userSockets.get(userId);
+      socketSet?.delete(socket.id);
+      if (socketSet?.size === 0) userSockets.delete(userId);
+
       console.log(`🔴 Disconnected: ${userId} | socket: ${socket.id}`);
+
+      // ✅ FIX: Auto-end active call if user disconnects abruptly
+      if (activeCalls.has(userId)) {
+        const peerId = activeCalls.get(userId);
+        console.log(`⚠️ Abrupt disconnect during call: ${userId} | ending for peer: ${peerId}`);
+        io.to(peerId).emit("call:end");
+        activeCalls.delete(userId);
+        activeCalls.delete(peerId);
+      }
+
       if (!userSockets.has(userId)) {
         try {
           await mongoConnect();

@@ -94,6 +94,7 @@ function CallScreen() {
   const [mounted,      setMounted]      = useState(false);
   const [me,           setMe]           = useState({});
   const [netStatus,    setNetStatus]    = useState("");
+  const [facingMode,   setFacingMode]   = useState("user");
 
   useEffect(() => {
     const u = JSON.parse(localStorage.getItem("user") || "{}");
@@ -217,6 +218,40 @@ function CallScreen() {
     setCallState("calling");
   }
 
+  // ✅ New: Switch camera for mobile
+  async function switchCamera() {
+    if (callType !== "video" || !localStream.current) return;
+    const nextMode = facingMode === "user" ? "environment" : "user";
+    setFacingMode(nextMode);
+
+    // Stop old tracks
+    localStream.current.getVideoTracks().forEach(t => t.stop());
+
+    const constraints = {
+      audio: true,
+      video: { facingMode: nextMode, width: { ideal:1280 }, height: { ideal:720 } }
+    };
+
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      
+      // Update local storage ref
+      const oldTracks = localStream.current.getTracks();
+      localStream.current = new MediaStream([newVideoTrack, ...oldTracks.filter(t => t.kind === "audio")]);
+
+      if (localRef.current) localRef.current.srcObject = localStream.current;
+
+      // Replace track in peer connection
+      if (peerRef.current) {
+        const sender = peerRef.current.getSenders().find(s => s.track?.kind === "video");
+        if (sender) sender.replaceTrack(newVideoTrack);
+      }
+    } catch (e) {
+      console.error("Camera switch error:", e);
+    }
+  }
+
   async function runReceiver(socket) {
     setCallState("requesting");
     const raw = sessionStorage.getItem("incomingCall");
@@ -256,12 +291,11 @@ function CallScreen() {
 
   async function getMedia() {
     const constraints = callType === "video"
-      ? { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video: { width:{ideal:1280}, height:{ideal:720} } }
+      ? { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video: { facingMode, width:{ideal:1280}, height:{ideal:720} } }
       : { audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video: false };
     try {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStream.current = stream;
-      console.log("🎤 Got tracks:", stream.getTracks().map(t => t.kind + ":" + t.readyState));
       if (localRef.current && callType === "video") {
         localRef.current.srcObject = stream;
         localRef.current.muted = true;
@@ -506,6 +540,16 @@ function CallScreen() {
             style={{ background: speakerOn ? "rgba(255,255,255,0.15)" : "#ef4444" }}>
             {speakerOn ? <Volume2 className="w-6 h-6 text-white" /> : <VolumeX className="w-6 h-6 text-white" />}
           </motion.button>
+
+          {callType === "video" && (
+            <motion.button whileTap={{ scale:0.9 }} onClick={switchCamera}
+              className="w-14 h-14 rounded-full flex items-center justify-center"
+              style={{ background: "rgba(255,255,255,0.15)" }}>
+              <motion.div animate={{ rotate: facingMode === "user" ? 0 : 180 }}>
+                <Video className="w-6 h-6 text-white" />
+              </motion.div>
+            </motion.button>
+          )}
 
           {callType === "video" && (
             <motion.button whileTap={{ scale:0.9 }} onClick={toggleCam}
