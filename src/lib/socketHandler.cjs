@@ -6,6 +6,8 @@ const { mongoConnect } = require("./mongoConnect.cjs");
 const userSockets = new Map(); // userId → Set of socketIds
 const pendingCalls = new Map(); // receiverId → callPayload
 const activeCalls  = new Map(); // userId → peerId (to track active calls for auto-cleanup)
+const iceBuffer    = new Map(); // userId → Array of buffered ICE candidates
+const readyUsers   = new Set(); // userId → boolean (is user on the call page and ready?)
 
 module.exports = function socketHandler(io) {
   io.on("connection", async (socket) => {
@@ -146,8 +148,29 @@ module.exports = function socketHandler(io) {
       io.to(to).emit("call:answer", { answer });
     });
 
+    socket.on("call:ready", () => {
+      console.log(`🔔 call:ready: ${userId}`);
+      readyUsers.add(userId);
+      
+      // Flush buffered ICE candidates
+      if (iceBuffer.has(userId)) {
+        const candidates = iceBuffer.get(userId);
+        console.log(`   🧊 Flushing ${candidates.length} candidates to ${userId}`);
+        candidates.forEach(candidate => {
+          socket.emit("call:ice-candidate", { candidate });
+        });
+        iceBuffer.delete(userId);
+      }
+    });
+
     socket.on("call:ice-candidate", ({ to, candidate }) => {
-      io.to(to).emit("call:ice-candidate", { candidate });
+      if (readyUsers.has(to)) {
+        io.to(to).emit("call:ice-candidate", { candidate });
+      } else {
+        console.log(`   🧊 Buffering ICE candidate for ${to}`);
+        if (!iceBuffer.has(to)) iceBuffer.set(to, []);
+        iceBuffer.get(to).push(candidate);
+      }
     });
 
     socket.on("call:end", ({ to }) => {
@@ -155,6 +178,10 @@ module.exports = function socketHandler(io) {
       pendingCalls.delete(to);
       activeCalls.delete(userId);
       activeCalls.delete(to);
+      readyUsers.delete(userId);
+      readyUsers.delete(to);
+      iceBuffer.delete(userId);
+      iceBuffer.delete(to);
       io.to(to).emit("call:end");
     });
 
@@ -163,6 +190,10 @@ module.exports = function socketHandler(io) {
       pendingCalls.delete(userId);
       activeCalls.delete(userId);
       activeCalls.delete(to);
+      readyUsers.delete(userId);
+      readyUsers.delete(to);
+      iceBuffer.delete(userId);
+      iceBuffer.delete(to);
       io.to(to).emit("call:rejected");
     });
 
@@ -180,7 +211,14 @@ module.exports = function socketHandler(io) {
         io.to(peerId).emit("call:end");
         activeCalls.delete(userId);
         activeCalls.delete(peerId);
+        readyUsers.delete(userId);
+        readyUsers.delete(peerId);
+        iceBuffer.delete(userId);
+        iceBuffer.delete(peerId);
       }
+      
+      readyUsers.delete(userId);
+      iceBuffer.delete(userId);
 
       if (!userSockets.has(userId)) {
         try {

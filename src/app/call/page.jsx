@@ -95,6 +95,7 @@ function CallScreen() {
   const [me,           setMe]           = useState({});
   const [netStatus,    setNetStatus]    = useState("");
   const [facingMode,   setFacingMode]   = useState("user");
+  const [playBlocked,  setPlayBlocked]  = useState(false); // ✅ Track autoplay block
 
   useEffect(() => {
     const u = JSON.parse(localStorage.getItem("user") || "{}");
@@ -124,21 +125,15 @@ function CallScreen() {
     const tryPlay = () => {
       el.play().then(() => {
         console.log("▶️ Remote audio playing!");
+        setPlayBlocked(false);
       }).catch(err => {
         console.warn("⚠️ Autoplay blocked:", err.message);
-        // ✅ Retry on next user interaction (browser autoplay policy)
-        const unlock = () => {
-          el.play().catch(() => {});
-          document.removeEventListener("click",      unlock);
-          document.removeEventListener("touchstart", unlock);
-        };
-        document.addEventListener("click",      unlock, { once: true });
-        document.addEventListener("touchstart", unlock, { once: true });
+        setPlayBlocked(true);
       });
     };
 
     tryPlay();
-  }, [remoteStream]); // ✅ Re-runs whenever remoteStream changes
+  }, [remoteStream, volume]); // ✅ Re-runs whenever remoteStream or volume changes
 
   useEffect(() => {
     if (!mounted) return;
@@ -188,6 +183,9 @@ function CallScreen() {
 
     socket.on("call:end",      () => endCall(false));
     socket.on("call:rejected", () => { setCallState("rejected"); setTimeout(() => router.back(), 2000); });
+
+    // ✅ Notify server we are ready to receive ICE/signaling
+    socket.emit("call:ready");
 
     if (isCaller) await runCaller(socket);
     else          await runReceiver(socket);
@@ -470,6 +468,27 @@ function CallScreen() {
           style={{ zIndex:1 }}
         />
       )}
+
+      {/* ✅ Autoplay Fallback Button */}
+      <AnimatePresence>
+        {playBlocked && callState === "active" && (
+          <motion.button
+            initial={{ opacity:0, scale:0.9 }}
+            animate={{ opacity:1, scale:1 }}
+            exit={{ opacity:0, scale:0.9 }}
+            onClick={() => {
+              if (remoteRef.current) {
+                remoteRef.current.play().then(() => setPlayBlocked(false)).catch(() => {});
+              }
+            }}
+            className="absolute z-[100] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-6 py-4 rounded-2xl flex flex-col items-center gap-2"
+            style={{ background: "rgba(99,102,241,0.9)", backdropFilter: "blur(12px)", color:"white", boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
+            <Volume2 className="w-8 h-8" />
+            <span className="font-bold">Tap to enable audio</span>
+            <span className="text-xs opacity-80 text-center">Your browser blocked automatic sound</span>
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex:2,
         background:"linear-gradient(to bottom,rgba(0,0,0,0.6) 0%,transparent 30%,transparent 60%,rgba(0,0,0,0.8) 100%)" }} />
