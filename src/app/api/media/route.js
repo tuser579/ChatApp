@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireAuth }  from "@/lib/authMiddleware";
-import { v2 as cloudinary } from "cloudinary";
+import { promises as fs } from "fs";
+import path from "path";
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_NAME,
-  api_key:    process.env.CLOUDINARY_KEY,
-  api_secret: process.env.CLOUDINARY_SECRET,
-});
+// ✅ Force Next.js to parse this route dynamically, not statically
+export const dynamic = "force-dynamic";
 
 export async function POST(req) {
   const { user, error } = requireAuth(req);
@@ -16,19 +14,30 @@ export async function POST(req) {
     const formData = await req.formData();
     const file     = formData.get("file");
 
-    if (!file)
+    if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
 
-    const result = await cloudinary.uploader.upload(base64, {
-      folder: "nexchat",
-      resource_type: "auto",
-    });
+    // Generate a unique filename: timestamp-random.ext
+    const ext      = path.extname(file.name) || "";
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
 
-    return NextResponse.json({ url: result.secure_url });
+    // Ensure public/uploads directory exists
+    const uploadDir = path.join(process.cwd(), "public", "uploads");
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    // Write file to public/uploads
+    const filepath = path.join(uploadDir, filename);
+    await fs.writeFile(filepath, buffer);
+
+    // Return the public URL to access the file
+    const url = `/uploads/${filename}`;
+    return NextResponse.json({ url });
+
   } catch (err) {
+    console.error("Local file upload error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
