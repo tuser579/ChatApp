@@ -8,7 +8,6 @@ import {
   LogOut, User, Settings
 } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
-import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { connectSocket } from "@/lib/socket";
 
 function Avatar({ name, avatar, size = 36, online }) {
@@ -52,22 +51,22 @@ export default function ChatLayout({ children }) {
     setMe(u);
     setMounted(true);
     fetchConvos(t);
+  }, []);
 
-    // ✅ Connect socket once here — persistent for entire session
-    const myId = u?.id || u?._id;
+  useEffect(() => {
+    if (!mounted || !token) return;
+    
+    // ✅ Re-attach listener for conversation updates
+    const myId = me?.id || me?._id;
     if (myId) {
       connectSocket(myId).then(socket => {
-        console.log("💬 Chat layout socket connected:", socket.id);
-
-        // ✅ FIX: Auto-reload conversations when a message is sent in ANY conversation
         socket.off("conversation:update");
         socket.on("conversation:update", () => {
-          console.log("🔄 Auto-reloading conversations...");
-          fetchConvos(t);
+          fetchConvos(token);
         });
       });
     }
-  }, []);
+  }, [mounted, token, me]);
 
   useEffect(() => {
     if (!mounted || !token) return;
@@ -287,9 +286,6 @@ export default function ChatLayout({ children }) {
       <main className="flex-1 overflow-hidden">
         {children}
       </main>
-
-      {/* ── Incoming call popup ── */}
-      <IncomingCallAlert />
 
       {/* ── New chat modal ── */}
       <AnimatePresence>

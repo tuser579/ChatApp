@@ -1,6 +1,7 @@
 import "./globals.css";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { Syne, DM_Sans } from "next/font/google";
+import IncomingCallAlert from "@/components/IncomingCallAlert";
 
 const syne = Syne({
   subsets: ["latin"],
@@ -25,6 +26,7 @@ export default function RootLayout({ children }) {
       className={`${syne.variable} ${dmSans.variable}`}>
       <body>
         <ThemeProvider>
+          <IncomingCallAlert />
           {children}
         </ThemeProvider>
       </body>
