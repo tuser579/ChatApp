@@ -23,11 +23,15 @@ function getContentType(filename) {
 
 export async function GET(req, { params }) {
   try {
-    const filename = params.file.join("/");
+    // ✅ In modern Next.js (15+), params is a Promise and MUST be awaited
+    const { file } = await params;
+    const filename = file.join("/");
     
     // Validate path to prevent directory traversal attacks
     const uploadDir = path.join(process.cwd(), "public", "uploads");
     const safePath  = path.normalize(path.join(uploadDir, filename)).replace(/^(\.\.(\/|\\|$))+/, "");
+    
+    console.log(`📂 Attempting to serve file: ${safePath}`);
     
     if (!safePath.startsWith(uploadDir)) {
       return new NextResponse("Forbidden", { status: 403 });
