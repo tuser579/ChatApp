@@ -21,7 +21,19 @@ export async function POST(req) {
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Generate a unique filename: timestamp-random.ext
-    const ext      = path.extname(file.name) || "";
+    let ext = path.extname(file.name) || "";
+    
+    // Fallback to mime type if extension is missing (happens on some mobile devices/browsers)
+    if (!ext && file.type) {
+      if (file.type === "application/pdf") ext = ".pdf";
+      else if (file.type.startsWith("image/jpeg")) ext = ".jpg";
+      else if (file.type.startsWith("image/png")) ext = ".png";
+      else if (file.type.startsWith("image/gif")) ext = ".gif";
+      else if (file.type.startsWith("audio/webm")) ext = ".webm";
+      else if (file.type.startsWith("audio/mp3")) ext = ".mp3";
+      else if (file.type.startsWith("video/mp4")) ext = ".mp4";
+    }
+
     const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
 
     // Ensure public/uploads directory exists
