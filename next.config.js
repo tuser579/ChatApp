@@ -7,16 +7,18 @@ const nextConfig = {
 
     if (process.env.NODE_ENV !== "production") return [];
 
-    return [
-      {
-        source:      "/api/:path*",
-        destination: `${backendUrl}/api/:path*`,
-      },
-      {
-        source:      "/socket.io/:path*",
-        destination: `${backendUrl}/socket.io/:path*`,
-      },
-    ];
+    return {
+      beforeFiles: [
+        {
+          source:      "/api/:path*",
+          destination: `${backendUrl}/api/:path*`,
+        },
+        {
+          source:      "/socket.io/:path*",
+          destination: `${backendUrl}/socket.io/:path*`,
+        },
+      ]
+    };
   },
 };
 
