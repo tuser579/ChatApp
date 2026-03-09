@@ -49,7 +49,6 @@ function createRingTone() {
 
 async function getIceServers() {
   try {
-    // ✅ Fetch from our own API route (which runs on Render — has env vars)
     const res  = await fetch(`${BACKEND}/api/ice`);
     const data = await res.json();
     console.log("🧊 Got ICE servers:", data.iceServers?.length);
@@ -82,18 +81,19 @@ function CallScreen() {
   const remoteReady = useRef(false);
   const stopRing    = useRef(null);
 
-  const [callState, setCallState] = useState("init");
-  const [micOn,     setMicOn]     = useState(true);
-  const [camOn,     setCamOn]     = useState(callType === "video");
-  const [speakerOn, setSpeakerOn] = useState(true);
-  const [volume,    setVolume]    = useState(1.0);
-  const [showVol,   setShowVol]   = useState(false);
-  const [duration,  setDuration]  = useState(0);
-  const [permError, setPermError] = useState("");
-  const [otherName, setOtherName] = useState("");
-  const [mounted,   setMounted]   = useState(false);
-  const [me,        setMe]        = useState({});
-  const [netStatus, setNetStatus] = useState("");
+  const [callState,    setCallState]    = useState("init");
+  const [remoteStream, setRemoteStream] = useState(null); // ✅ FIX: track in state
+  const [micOn,        setMicOn]        = useState(true);
+  const [camOn,        setCamOn]        = useState(callType === "video");
+  const [speakerOn,    setSpeakerOn]    = useState(true);
+  const [volume,       setVolume]       = useState(1.0);
+  const [showVol,      setShowVol]      = useState(false);
+  const [duration,     setDuration]     = useState(0);
+  const [permError,    setPermError]    = useState("");
+  const [otherName,    setOtherName]    = useState("");
+  const [mounted,      setMounted]      = useState(false);
+  const [me,           setMe]           = useState({});
+  const [netStatus,    setNetStatus]    = useState("");
 
   useEffect(() => {
     const u = JSON.parse(localStorage.getItem("user") || "{}");
@@ -108,6 +108,36 @@ function CallScreen() {
     const id = setInterval(() => setDuration(d => d + 1), 1000);
     return () => clearInterval(id);
   }, [callState]);
+
+  // ✅ FIX: Attach remoteStream to the audio/video element via useEffect
+  // This guarantees the DOM element is mounted before we set srcObject
+  useEffect(() => {
+    const el = remoteRef.current;
+    if (!el || !remoteStream) return;
+
+    console.log("🎵 Attaching remoteStream to element, tracks:", remoteStream.getTracks().map(t => t.kind + ":" + t.readyState));
+    el.srcObject = remoteStream;
+    el.muted  = false;
+    el.volume = volume;
+
+    const tryPlay = () => {
+      el.play().then(() => {
+        console.log("▶️ Remote audio playing!");
+      }).catch(err => {
+        console.warn("⚠️ Autoplay blocked:", err.message);
+        // ✅ Retry on next user interaction (browser autoplay policy)
+        const unlock = () => {
+          el.play().catch(() => {});
+          document.removeEventListener("click",      unlock);
+          document.removeEventListener("touchstart", unlock);
+        };
+        document.addEventListener("click",      unlock, { once: true });
+        document.addEventListener("touchstart", unlock, { once: true });
+      });
+    };
+
+    tryPlay();
+  }, [remoteStream]); // ✅ Re-runs whenever remoteStream changes
 
   useEffect(() => {
     if (!mounted) return;
@@ -220,7 +250,8 @@ function CallScreen() {
     await peer.setLocalDescription(answer);
     socket.emit("call:answer", { to: from, answer });
     console.log("📤 Answer sent");
-    setCallState("active");
+    // ✅ FIX: Don't set "active" here — wait for ontrack / ICE connected
+    setCallState("calling");
   }
 
   async function getMedia() {
@@ -252,34 +283,27 @@ function CallScreen() {
     const peer = new RTCPeerConnection({ iceServers });
     peerRef.current = peer;
 
-    // ✅ ontrack — critical for audio
+    // ✅ FIX: ontrack — update React state so useEffect attaches srcObject reliably
     peer.ontrack = (e) => {
       console.log("🎵 ontrack:", e.track.kind, "streams:", e.streams.length, "readyState:", e.track.readyState);
 
-      const el = remoteRef.current;
-      if (!el) return;
-
-      if (e.streams?.[0]) {
-        el.srcObject = e.streams[0];
+      if (e.streams && e.streams[0]) {
+        // ✅ Store in state — useEffect will attach to DOM element
+        setRemoteStream(e.streams[0]);
       } else {
-        if (!(el.srcObject instanceof MediaStream)) el.srcObject = new MediaStream();
-        el.srcObject.addTrack(e.track);
+        // ✅ Fallback: build a MediaStream manually
+        setRemoteStream(prev => {
+          if (prev && prev instanceof MediaStream) {
+            // Clone and add track to existing stream
+            const next = new MediaStream(prev.getTracks());
+            next.addTrack(e.track);
+            return next;
+          }
+          return new MediaStream([e.track]);
+        });
       }
 
-      el.muted  = false;
-      el.volume = 1.0;
-
-      el.play().then(() => {
-        console.log("▶️ Playing remote audio!");
-        setCallState("active");
-      }).catch(err => {
-        console.warn("⚠️ Autoplay blocked:", err.message);
-        setCallState("active");
-        // ✅ User must tap screen to unblock autoplay
-        const unlock = () => { el.play().catch(() => {}); };
-        document.addEventListener("click",      unlock, { once: true });
-        document.addEventListener("touchstart", unlock, { once: true });
-      });
+      setCallState("active");
     };
 
     peer.onicecandidate = (e) => {
@@ -295,12 +319,11 @@ function CallScreen() {
       if (s === "connected" || s === "completed") { setCallState("active"); setNetStatus(""); }
       if (s === "failed") {
         console.error("❌ ICE failed — trying restart");
-        // ✅ Try ICE restart
         if (isCaller && peer.signalingState === "stable") {
           peer.createOffer({ iceRestart: true }).then(offer => {
             peer.setLocalDescription(offer);
-            const s = getSocket();
-            s?.emit("call:offer", { to: toUserId, offer, callType });
+            const sock = getSocket();
+            sock?.emit("call:offer", { to: toUserId, offer, callType });
           }).catch(() => {});
         }
       }
@@ -331,6 +354,11 @@ function CallScreen() {
     if (stopRing.current) { stopRing.current(); stopRing.current = null; }
     peerRef.current?.close(); peerRef.current = null;
     localStream.current?.getTracks().forEach(t => t.stop()); localStream.current = null;
+    // ✅ Clear remote audio element
+    if (remoteRef.current) {
+      remoteRef.current.srcObject = null;
+    }
+    setRemoteStream(null);
     const s = getSocket();
     if (s) { s.off("call:answer"); s.off("call:ice-candidate"); s.off("call:end"); s.off("call:rejected"); }
   }
@@ -385,11 +413,23 @@ function CallScreen() {
     <div className="fixed inset-0 flex flex-col items-center justify-between"
       style={{ background:"linear-gradient(135deg,#0f172a,#0a0e1a)", zIndex:100 }}>
 
-      {/* ✅ Remote audio/video — never muted */}
-      {callType === "video"
-        ? <video ref={remoteRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" style={{ zIndex:1 }} />
-        : <audio ref={remoteRef} autoPlay playsInline style={{ display:"none" }} />
-      }
+      {/* ✅ FIX: Always render BOTH audio and video elements so remoteRef is always mounted.
+          For voice calls: video is hidden. For video calls: audio is hidden (video carries audio too). */}
+      <audio
+        ref={callType === "voice" ? remoteRef : undefined}
+        autoPlay
+        playsInline
+        style={{ display: "none" }}
+      />
+      {callType === "video" && (
+        <video
+          ref={remoteRef}
+          autoPlay
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ zIndex:1 }}
+        />
+      )}
 
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex:2,
         background:"linear-gradient(to bottom,rgba(0,0,0,0.6) 0%,transparent 30%,transparent 60%,rgba(0,0,0,0.8) 100%)" }} />
