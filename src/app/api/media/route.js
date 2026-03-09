@@ -44,8 +44,9 @@ export async function POST(req) {
     const filepath = path.join(uploadDir, filename);
     await fs.writeFile(filepath, buffer);
 
-    // Return the public URL to access the file
-    const url = `/uploads/${filename}`;
+    // Return the public URL to access the file via our custom API route
+    // We use /api/file/ instead of /uploads/ to prevent Next.js public folder conflicts
+    const url = `/api/file/${filename}`;
     return NextResponse.json({ url });
 
   } catch (err) {
