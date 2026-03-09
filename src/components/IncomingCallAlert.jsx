@@ -17,7 +17,6 @@ function startRinging() {
       if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
       if (ctx.state === "suspended") ctx.resume();
 
-      // Two-tone ring (like a phone)
       [[800, 0, 0.3], [640, 0.35, 0.3]].forEach(([freq, delay, dur]) => {
         const osc  = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -49,44 +48,69 @@ export default function IncomingCallAlert() {
   const router      = useRouter();
   const [incoming,  setIncoming]  = useState(null);
   const stopRingRef = useRef(null);
+  // ✅ FIX: Use a ref to the handler so we can register it BEFORE socket connects
+  const handlerRef  = useRef(null);
 
   useEffect(() => {
     const me   = JSON.parse(localStorage.getItem("user") || "{}");
     const myId = me?.id || me?._id;
     if (!myId) return;
 
+    // ✅ FIX: Define the handler FIRST, store in ref
+    handlerRef.current = ({ from, fromName, offer, callType }) => {
+      console.log("📞 INCOMING CALL:", { from, fromName, callType });
+      if (stopRingRef.current) stopRingRef.current();
+      stopRingRef.current = startRinging();
+      setIncoming({ from, fromName, offer, callType });
+    };
+
+    // ✅ FIX: Connect and register listeners — if socket already connected,
+    // we still re-attach listeners to ensure they are fresh
     connectSocket(myId).then((socket) => {
       console.log("🔔 IncomingCallAlert socket ready:", socket.id);
-      registerListeners(socket);
+      attachListeners(socket);
     });
 
-    function registerListeners(socket) {
-      socket.off("call:incoming");
-      socket.off("call:end");
-      socket.off("call:rejected");
+    function attachListeners(socket) {
+      // ✅ FIX: Remove old listener and add fresh one — avoids duplicates
+      socket.off("call:incoming", handlerRef.current);
+      socket.on("call:incoming", handlerRef.current);
 
-      socket.on("call:incoming", ({ from, fromName, offer, callType }) => {
-        console.log("📞 INCOMING CALL:", { from, fromName, callType });
-        // ✅ Start ringing
-        if (stopRingRef.current) stopRingRef.current();
-        stopRingRef.current = startRinging();
-        setIncoming({ from, fromName, offer, callType });
-      });
-
+      socket.off("call:end_for_alert");
       socket.on("call:end", () => {
         stopRinging();
         setIncoming(null);
       });
 
+      socket.off("call:rejected_for_alert");
       socket.on("call:rejected", () => {
         stopRinging();
         setIncoming(null);
       });
 
-      socket.on("reconnect", () => registerListeners(socket));
+      // ✅ FIX: Re-attach listeners on every reconnect
+      socket.off("reconnect");
+      socket.on("reconnect", () => {
+        console.log("🔄 Reconnected — re-attaching call listeners");
+        attachListeners(socket);
+      });
+
+      // ✅ FIX: Also handle connect event (for fresh connects after disconnect)
+      socket.off("connect");
+      socket.on("connect", () => {
+        console.log("🔌 Socket re-connected — re-attaching call listeners");
+        attachListeners(socket);
+      });
     }
 
-    return () => { stopRinging(); };
+    return () => {
+      stopRinging();
+      // ✅ Clean up only our specific handler reference, not all listeners
+      const s = getSocket();
+      if (s && handlerRef.current) {
+        s.off("call:incoming", handlerRef.current);
+      }
+    };
   }, []);
 
   function stopRinging() {

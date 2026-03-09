@@ -315,9 +315,14 @@ function CallScreen() {
     peer.oniceconnectionstatechange = () => {
       const s = peer.iceConnectionState;
       console.log("🧊 ICE:", s);
-      setNetStatus(s);
-      if (s === "connected" || s === "completed") { setCallState("active"); setNetStatus(""); }
-      if (s === "failed") {
+      // ✅ FIX: Only surface real problem states — hide normal "checking" state
+      if (s === "connected" || s === "completed" || s === "checking") {
+        setCallState("active");
+        setNetStatus("");
+      } else if (s === "disconnected") {
+        setNetStatus("reconnecting...");
+      } else if (s === "failed") {
+        setNetStatus("Connection failed");
         console.error("❌ ICE failed — trying restart");
         if (isCaller && peer.signalingState === "stable") {
           peer.createOffer({ iceRestart: true }).then(offer => {
@@ -326,8 +331,9 @@ function CallScreen() {
             sock?.emit("call:offer", { to: toUserId, offer, callType });
           }).catch(() => {});
         }
+      } else {
+        setNetStatus("");
       }
-      if (s === "disconnected") setNetStatus("reconnecting...");
     };
 
     peer.onconnectionstatechange = () => {
@@ -448,8 +454,8 @@ function CallScreen() {
           </p>
           {netStatus && netStatus !== "" && (
             <p className="text-xs mt-1 px-3 py-1 rounded-full inline-block"
-              style={{ background:"rgba(255,255,255,0.1)", color:"rgba(255,255,255,0.5)" }}>
-              Network: {netStatus}
+              style={{ background:"rgba(239,68,68,0.15)", color:"rgba(255,180,180,0.9)" }}>
+              ⚠️ {netStatus}
             </p>
           )}
         </div>

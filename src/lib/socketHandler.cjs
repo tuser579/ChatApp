@@ -32,7 +32,7 @@ module.exports = function socketHandler(io) {
             callType: pending.callType,
           });
           console.log(`   ✅ Re-delivered to new socket: ${socket.id}`);
-        }, 1500); // wait 1.5s for client to register listeners
+        }, 3000); // ✅ 3s — gives desktop browsers time to register listeners
       } else {
         pendingCalls.delete(userId);
         console.log(`⏰ Pending call expired for ${userId}`);
