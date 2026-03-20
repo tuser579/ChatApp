@@ -23,22 +23,39 @@ module.exports = function socketHandler(io) {
     console.log(`🟢 Connected: ${userId} | socket: ${socket.id}`);
 
     // ── Re-deliver pending call on reconnect ───────────────────────────────
+    // ✅ FIX: Only re-deliver if the call is NOT already active (accepted)
+    // This prevents the /call page reconnect from triggering ringing again
     if (pendingCalls.has(userId)) {
       const pending = pendingCalls.get(userId);
-      const age = Date.now() - pending.timestamp;
-      if (age < 60000) {
-        console.log(`📞 Re-delivering pending call to ${userId} (${age}ms late)`);
-        setTimeout(() => {
-          socket.emit("call:incoming", {
-            from:       pending.from,
-            fromName:   pending.fromName,
-            fromAvatar: pending.fromAvatar,
-            offer:      pending.offer,
-            callType:   pending.callType,
-          });
-          console.log(`   ✅ Re-delivered to socket: ${socket.id}`);
-        }, 3000);
-      } else {
+      const age     = Date.now() - pending.timestamp;
+
+      if (age < 60000 && !activeCalls.has(userId)) {
+        // ✅ FIX: Check if callee already accepted — if from is in activeCalls
+        // as a peer of userId, it means call was already answered, skip re-delivery
+        const callAlreadyActive = activeCalls.get(userId) === pending.from ||
+                                  activeCalls.get(pending.from) === userId;
+
+        if (!callAlreadyActive) {
+          console.log(`📞 Re-delivering pending call to ${userId} (${age}ms late)`);
+          setTimeout(() => {
+            // ✅ FIX: Double-check again inside timeout — state may have changed
+            if (pendingCalls.has(userId) && !activeCalls.has(userId)) {
+              socket.emit("call:incoming", {
+                from:       pending.from,
+                fromName:   pending.fromName,
+                fromAvatar: pending.fromAvatar,
+                offer:      pending.offer,
+                callType:   pending.callType,
+              });
+              console.log(`   ✅ Re-delivered to socket: ${socket.id}`);
+            } else {
+              console.log(`   🚫 Skipped re-delivery — call already active or cleared`);
+            }
+          }, 3000);
+        } else {
+          console.log(`   🚫 Skipping re-delivery — call already accepted`);
+        }
+      } else if (age >= 60000) {
         pendingCalls.delete(userId);
         console.log(`⏰ Pending call expired for ${userId}`);
       }
@@ -108,9 +125,11 @@ module.exports = function socketHandler(io) {
     // ════════════════════════════════════════════════════════════════════════
 
     // ── Step 1: Caller sends offer ─────────────────────────────────────────
-    // Client emits: { to: string, offer: RTCSessionDescription, callType: "audio"|"video" }
     socket.on("call:offer", async ({ to, offer, callType }) => {
       try {
+        // ✅ FIX: Clear any stale pending from this caller's previous calls
+        pendingCalls.delete(userId);
+
         await mongoConnect();
         const caller       = await User.findById(userId).select("name avatar");
         const callerName   = caller?.name   || "Unknown";
@@ -151,10 +170,14 @@ module.exports = function socketHandler(io) {
     });
 
     // ── Step 2: Callee sends answer ────────────────────────────────────────
-    // Client emits: { to: string, answer: RTCSessionDescription }
     socket.on("call:answer", ({ to, answer }) => {
       console.log(`✅ call:answer: ${userId} → ${to}`);
+
+      // ✅ FIX: Delete pending for BOTH sides immediately on answer
+      // This is the key fix — once answered, pending must be gone
+      // so any reconnect does NOT re-deliver the call
       pendingCalls.delete(userId);
+      pendingCalls.delete(to);
 
       // Track active call for auto-cleanup on disconnect
       activeCalls.set(userId, to);
@@ -164,7 +187,6 @@ module.exports = function socketHandler(io) {
     });
 
     // ── Step 3: Signal peer connection is ready to receive ICE ────────────
-    // Client emits: (no payload)
     socket.on("call:ready", () => {
       console.log(`🔔 call:ready: ${userId}`);
       readyUsers.add(userId);
@@ -181,46 +203,59 @@ module.exports = function socketHandler(io) {
     });
 
     // ── Step 4: ICE candidate exchange (both directions) ──────────────────
-    // Client emits: { to: string, candidate: RTCIceCandidate }
     socket.on("call:ice-candidate", ({ to, candidate }) => {
       if (readyUsers.has(to)) {
         io.to(to).emit("call:ice-candidate", { candidate });
       } else {
-        // Buffer until the peer signals ready
         console.log(`   🧊 Buffering ICE candidate for ${to}`);
         if (!iceBuffer.has(to)) iceBuffer.set(to, []);
         iceBuffer.get(to).push(candidate);
       }
     });
 
+    // ── ✅ NEW: Callee ACKs the call — stop all re-delivery immediately ────
+    // Client emits this as soon as /call page loads
+    // { from: callerId }
+    socket.on("call:ack", ({ from }) => {
+      console.log(`📋 call:ack: ${userId} acknowledged call from ${from}`);
+
+      // ✅ Delete pending for callee — no more re-delivery ever
+      pendingCalls.delete(userId);
+
+      // ✅ Mark both sides active so reconnect guard works
+      activeCalls.set(userId, from);
+      activeCalls.set(from, userId);
+    });
+
     // ── End call (graceful hang up) ────────────────────────────────────────
-    // Client emits: { to: string }
     socket.on("call:end", ({ to }) => {
       console.log(`📵 call:end: ${userId} → ${to}`);
+      // ✅ FIX: Also clear pending for both on end
+      pendingCalls.delete(userId);
+      pendingCalls.delete(to);
       _cleanupCall(userId, to);
       io.to(to).emit("call:end");
     });
 
     // ── Reject incoming call ───────────────────────────────────────────────
-    // Client emits: { to: string }
     socket.on("call:reject", ({ to }) => {
       console.log(`🚫 call:reject: ${userId} → ${to}`);
       pendingCalls.delete(userId);
+      pendingCalls.delete(to);
       _cleanupCall(userId, to);
       io.to(to).emit("call:rejected");
     });
 
     // ── Caller cancelled before callee answered ────────────────────────────
-    // Client emits: { to: string }
     socket.on("call:cancel", ({ to }) => {
       console.log(`❌ call:cancel: ${userId} → ${to}`);
       pendingCalls.delete(to);
+      pendingCalls.delete(userId);
       _cleanupCall(userId, to);
       io.to(to).emit("call:cancelled");
     });
 
     // ── Callee is busy (already in a call) ────────────────────────────────
-    // Client emits: { to: string }
     socket.on("call:busy", ({ to }) => {
       console.log(`📵 call:busy: ${userId} → ${to}`);
       pendingCalls.delete(userId);
@@ -235,8 +270,9 @@ module.exports = function socketHandler(io) {
 
       console.log(`🔴 Disconnected: ${userId} | socket: ${socket.id}`);
 
-      // Auto-end active call if user disconnects abruptly
-      if (activeCalls.has(userId)) {
+      // ✅ FIX: Only auto-end call if ALL sockets for this user are gone
+      // This prevents ending the call when the user just reconnects a socket
+      if (!userSockets.has(userId) && activeCalls.has(userId)) {
         const peerId = activeCalls.get(userId);
         console.log(`⚠️ Abrupt disconnect during call — ending for peer: ${peerId}`);
         io.to(peerId).emit("call:end");
@@ -244,7 +280,11 @@ module.exports = function socketHandler(io) {
       }
 
       readyUsers.delete(userId);
-      iceBuffer.delete(userId);
+
+      // ✅ FIX: Only delete iceBuffer if all sockets gone (reconnect needs buffer)
+      if (!userSockets.has(userId)) {
+        iceBuffer.delete(userId);
+      }
 
       // Mark offline only when ALL sockets for this user are gone
       if (!userSockets.has(userId)) {

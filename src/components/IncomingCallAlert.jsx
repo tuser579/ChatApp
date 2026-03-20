@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { connectSocket, getSocket } from "@/lib/socket";
 
-// ── Ringtone via Web Audio API ───────────────────────────────────────────────
+// ── Ringtone via Web Audio API ────────────────────────────────────────────────
 function startRinging() {
   let stopped = false;
   let ctx     = null;
@@ -18,12 +18,7 @@ function startRinging() {
     try {
       if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
       if (ctx.state === "suspended") ctx.resume();
-
-      // Two-tone ring pattern
-      [
-        [800, 0,    0.3],
-        [640, 0.35, 0.3],
-      ].forEach(([freq, delay, dur]) => {
+      [[800, 0, 0.3], [640, 0.35, 0.3]].forEach(([freq, delay, dur]) => {
         const osc  = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.connect(gain);
@@ -37,14 +32,11 @@ function startRinging() {
         osc.start(ctx.currentTime + delay);
         osc.stop(ctx.currentTime  + delay + dur);
       });
-    } catch (e) {
-      console.warn("Ringtone error:", e);
-    }
+    } catch (e) { console.warn("Ringtone error:", e); }
     if (!stopped) timerId = setTimeout(ring, 3000);
   }
 
   ring();
-
   return function stop() {
     stopped = true;
     if (timerId) clearTimeout(timerId);
@@ -52,32 +44,28 @@ function startRinging() {
   };
 }
 
-// ── Auto-decline timeout (60s) ───────────────────────────────────────────────
 const AUTO_DECLINE_MS = 60_000;
 
 export default function IncomingCallAlert() {
-  const router       = useRouter();
-  const [incoming,   setIncoming]   = useState(null);  // { from, fromName, fromAvatar, offer, callType }
-  const [countdown,  setCountdown]  = useState(0);     // seconds remaining
+  const router      = useRouter();
+  const [incoming,  setIncoming]  = useState(null);
+  const [countdown, setCountdown] = useState(0);
 
   const stopRingRef    = useRef(null);
   const handlerRef     = useRef(null);
-  const autoDeclineRef = useRef(null);  // setTimeout handle
-  const countdownRef   = useRef(null);  // setInterval handle
+  const autoDeclineRef = useRef(null);
+  const countdownRef   = useRef(null);
 
-  // ── Stop ringtone ──────────────────────────────────────────────────────────
   const stopRinging = useCallback(() => {
     stopRingRef.current?.();
     stopRingRef.current = null;
   }, []);
 
-  // ── Clear auto-decline timers ──────────────────────────────────────────────
   const clearTimers = useCallback(() => {
     if (autoDeclineRef.current) { clearTimeout(autoDeclineRef.current);  autoDeclineRef.current = null; }
     if (countdownRef.current)   { clearInterval(countdownRef.current);   countdownRef.current   = null; }
   }, []);
 
-  // ── Full dismiss (used by end/rejected/cancel) ─────────────────────────────
   const dismissCall = useCallback(() => {
     stopRinging();
     clearTimers();
@@ -85,51 +73,51 @@ export default function IncomingCallAlert() {
     setCountdown(0);
   }, [stopRinging, clearTimers]);
 
-  // ── Start auto-decline countdown ──────────────────────────────────────────
   const startAutoDecline = useCallback((callData) => {
-    const secs = AUTO_DECLINE_MS / 1000;
-    setCountdown(secs);
-
-    // Tick every second
+    setCountdown(AUTO_DECLINE_MS / 1000);
     countdownRef.current = setInterval(() => {
       setCountdown((c) => {
         if (c <= 1) { clearInterval(countdownRef.current); return 0; }
         return c - 1;
       });
     }, 1000);
-
-    // Auto-decline when timer expires
     autoDeclineRef.current = setTimeout(() => {
-      console.log("⏰ Auto-declining call — no answer");
-      const s = getSocket();
-      s?.emit("call:reject", { to: callData.from });
+      console.log("⏰ Auto-declining call");
+      getSocket()?.emit("call:reject", { to: callData.from });
       dismissCall();
     }, AUTO_DECLINE_MS);
   }, [dismissCall]);
 
-  // ── Socket setup ───────────────────────────────────────────────────────────
   useEffect(() => {
     const me   = JSON.parse(localStorage.getItem("user") || "{}");
     const myId = me?.id || me?._id;
     if (!myId) return;
 
-    // Define incoming call handler
     handlerRef.current = ({ from, fromName, fromAvatar, offer, callType }) => {
       console.log("📞 INCOMING CALL:", { from, fromName, callType });
 
-      // If already in a call — auto-busy
-      const existing = getSocket();
-      const alreadyActive = sessionStorage.getItem("activeCall");
-      if (alreadyActive) {
-        existing?.emit("call:busy", { to: from });
+      // ✅ FIX 1: If we are already in an active call — send busy and ignore
+      if (sessionStorage.getItem("activeCall")) {
+        console.log("📵 Already in a call — sending busy");
+        getSocket()?.emit("call:busy", { to: from });
         return;
       }
 
-      // Stop any previous ring first
+      // ✅ FIX 2: If this call was already accepted (same from + offer exists
+      // in sessionStorage) — this is a re-delivery, silently ignore it
+      const existing = sessionStorage.getItem("incomingCall");
+      if (existing) {
+        try {
+          const parsed = JSON.parse(existing);
+          if (parsed.from === from) {
+            console.log("🔁 Duplicate call:incoming ignored — already accepted");
+            return;
+          }
+        } catch {}
+      }
+
       stopRinging();
       clearTimers();
-
-      // Start ring
       stopRingRef.current = startRinging();
 
       const callData = { from, fromName, fromAvatar, offer, callType };
@@ -143,63 +131,36 @@ export default function IncomingCallAlert() {
     });
 
     function attachListeners(socket) {
-      // Remove old listeners to prevent duplicates
       socket.off("call:incoming",  handlerRef.current);
-      socket.off("call:end",       onCallEnd);
-      socket.off("call:rejected",  onCallDismissed);
-      socket.off("call:cancelled", onCallDismissed);
-      socket.off("call:busy",      onCallBusy);
-      socket.off("reconnect",      onReconnect);
-      socket.off("connect",        onReconnect);
+      socket.off("call:end");
+      socket.off("call:rejected");
+      socket.off("call:cancelled");
+      socket.off("call:busy");
+      socket.off("reconnect");
+      socket.off("connect");
 
-      // Attach fresh listeners
       socket.on("call:incoming",  handlerRef.current);
-      socket.on("call:end",       onCallEnd);
-      socket.on("call:rejected",  onCallDismissed);
-      socket.on("call:cancelled", onCallDismissed);
-      socket.on("call:busy",      onCallBusy);
-      socket.on("reconnect",      onReconnect);
-      socket.on("connect",        onReconnect);
-    }
-
-    function onCallEnd() {
-      console.log("📵 Call ended remotely");
-      dismissCall();
-    }
-
-    function onCallDismissed() {
-      console.log("🚫 Call dismissed");
-      dismissCall();
-    }
-
-    function onCallBusy() {
-      console.log("📵 Callee is busy");
-      dismissCall();
-    }
-
-    function onReconnect() {
-      console.log("🔄 Reconnected — re-attaching listeners");
-      const s = getSocket();
-      if (s) attachListeners(s);
+      socket.on("call:end",       () => { console.log("📵 Remote ended");   dismissCall(); });
+      socket.on("call:rejected",  () => { console.log("🚫 Rejected");       dismissCall(); });
+      socket.on("call:cancelled", () => { console.log("❌ Cancelled");      dismissCall(); });
+      socket.on("call:busy",      () => { console.log("📵 Busy");           dismissCall(); });
+      socket.on("reconnect",      () => { const s = getSocket(); if (s) attachListeners(s); });
+      socket.on("connect",        () => { const s = getSocket(); if (s) attachListeners(s); });
     }
 
     return () => {
       stopRinging();
       clearTimers();
       const s = getSocket();
-      if (s && handlerRef.current) {
-        s.off("call:incoming", handlerRef.current);
-      }
+      if (s && handlerRef.current) s.off("call:incoming", handlerRef.current);
     };
   }, [stopRinging, clearTimers, dismissCall, startAutoDecline]);
 
-  // ── Accept call ────────────────────────────────────────────────────────────
   function accept() {
     if (!incoming) return;
     stopRinging();
     clearTimers();
 
-    // Store call data for the /call page to pick up
     sessionStorage.setItem("incomingCall", JSON.stringify({
       from:       incoming.from,
       fromName:   incoming.fromName,
@@ -208,7 +169,7 @@ export default function IncomingCallAlert() {
       callType:   incoming.callType,
     }));
 
-    // Mark active so busy signal works
+    // ✅ FIX 3: Mark active BEFORE navigating so re-delivery is blocked
     sessionStorage.setItem("activeCall", "1");
 
     setIncoming(null);
@@ -216,15 +177,12 @@ export default function IncomingCallAlert() {
     router.push(`/call?type=${incoming.callType}&from=${incoming.from}`);
   }
 
-  // ── Decline call ───────────────────────────────────────────────────────────
   function decline() {
     if (!incoming) return;
-    const s = getSocket();
-    s?.emit("call:reject", { to: incoming.from });
+    getSocket()?.emit("call:reject", { to: incoming.from });
     dismissCall();
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <AnimatePresence>
       {incoming && (
@@ -245,7 +203,7 @@ export default function IncomingCallAlert() {
         >
           <div className="flex items-center gap-3">
 
-            {/* Pulsing call icon */}
+            {/* Pulsing avatar / icon */}
             <div className="relative shrink-0 w-12 h-12">
               <motion.div
                 animate={{ scale: [1, 1.6, 1], opacity: [0.4, 0, 0.4] }}
@@ -253,28 +211,23 @@ export default function IncomingCallAlert() {
                 className="absolute inset-0 rounded-full"
                 style={{ background: "var(--success)" }}
               />
-              {/* Avatar if available, else icon */}
               {incoming.fromAvatar ? (
                 <img
                   src={incoming.fromAvatar}
                   alt={incoming.fromName}
-                  className="absolute inset-0 w-full h-full rounded-full object-cover z-10 ring-2"
-                  style={{ ringColor: "var(--success)" }}
+                  className="absolute inset-0 w-full h-full rounded-full object-cover z-10"
                 />
               ) : (
-                <div
-                  className="absolute inset-0 rounded-full flex items-center justify-center z-10"
-                  style={{ background: "rgba(34,197,94,0.15)" }}
-                >
+                <div className="absolute inset-0 rounded-full flex items-center justify-center z-10"
+                  style={{ background: "rgba(34,197,94,0.15)" }}>
                   {incoming.callType === "video"
-                    ? <Video  className="w-5 h-5" style={{ color: "var(--success)" }} />
-                    : <Phone  className="w-5 h-5" style={{ color: "var(--success)" }} />
-                  }
+                    ? <Video className="w-5 h-5" style={{ color: "var(--success)" }} />
+                    : <Phone className="w-5 h-5" style={{ color: "var(--success)" }} />}
                 </div>
               )}
             </div>
 
-            {/* Caller info + countdown */}
+            {/* Info */}
             <div className="flex-1 min-w-0">
               <p className="text-xs mb-0.5" style={{ color: "var(--fg-muted)" }}>
                 Incoming {incoming.callType === "video" ? "Video" : "Voice"} Call
@@ -289,31 +242,22 @@ export default function IncomingCallAlert() {
               )}
             </div>
 
-            {/* Decline button */}
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={decline}
-              title="Decline"
+            {/* Decline */}
+            <motion.button whileTap={{ scale: 0.9 }} onClick={decline} title="Decline"
               className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-              style={{ background: "rgba(239,68,68,0.15)" }}
-            >
+              style={{ background: "rgba(239,68,68,0.15)" }}>
               <PhoneOff className="w-4 h-4" style={{ color: "var(--danger)" }} />
             </motion.button>
 
-            {/* Accept button */}
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={accept}
-              title="Accept"
+            {/* Accept */}
+            <motion.button whileTap={{ scale: 0.9 }} onClick={accept} title="Accept"
               className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 animate-pulse"
-              style={{ background: "rgba(34,197,94,0.15)" }}
-            >
+              style={{ background: "rgba(34,197,94,0.15)" }}>
               <Phone className="w-4 h-4" style={{ color: "var(--success)" }} />
             </motion.button>
-
           </div>
 
-          {/* Auto-decline progress bar */}
+          {/* Progress bar */}
           {countdown > 0 && (
             <div className="mt-3 h-0.5 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
               <motion.div
