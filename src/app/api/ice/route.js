@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const iceServers = [
     { urls: "stun:stun.l.google.com:19302"  },

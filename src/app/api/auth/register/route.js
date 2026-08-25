@@ -4,6 +4,8 @@ import { mongoConnect } from "@/lib/mongoConnect.cjs";
 import User             from "@/models/User.cjs";
 import { signToken }    from "@/lib/jwt.cjs";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req) {
   try {
     const { name, email, password } = await req.json();

@@ -5,7 +5,7 @@ let cached = global.mongoose || (global.mongoose = { conn: null, promise: null }
 async function mongoConnect() {
   const MONGODB_URI = process.env.MONGODB_URI;
   if (!MONGODB_URI) {
-    console.warn("⚠️ MONGODB_URI environment variable is missing.");
+    console.warn("⚠️ MONGODB_URI environment variable is missing (build/offline mode).");
     return null;
   }
 
@@ -22,6 +22,10 @@ async function mongoConnect() {
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongooseInstance) => {
       console.log("🍃 MongoDB Connected Successfully");
       return mongooseInstance;
+    }).catch((err) => {
+      console.error("❌ MongoDB connection error:", err.message);
+      cached.promise = null;
+      return null;
     });
   }
 
@@ -29,7 +33,7 @@ async function mongoConnect() {
     cached.conn = await cached.promise;
   } catch (e) {
     cached.promise = null;
-    throw e;
+    return null;
   }
 
   return cached.conn;

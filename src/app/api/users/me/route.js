@@ -3,6 +3,8 @@ import { mongoConnect }  from "@/lib/mongoConnect.cjs";
 import User              from "@/models/User.cjs";
 import { requireAuth }   from "@/lib/authMiddleware";
 
+export const dynamic = "force-dynamic";
+
 export async function PUT(req) {
   const { user, error } = requireAuth(req);
   if (error) return error;
@@ -10,7 +12,7 @@ export async function PUT(req) {
   await mongoConnect();
 
   const data = await req.json();
-  delete data.password; // never allow password update here
+  delete data.password;
 
   await User.findByIdAndUpdate(user.id, { $set: data });
 

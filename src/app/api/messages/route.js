@@ -3,6 +3,8 @@ import { mongoConnect }  from "@/lib/mongoConnect.cjs";
 import Message           from "@/models/Message.cjs";
 import { requireAuth }   from "@/lib/authMiddleware";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req) {
   const { user, error } = requireAuth(req);
   if (error) return error;

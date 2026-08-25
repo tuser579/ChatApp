@@ -5,6 +5,8 @@ import Conversation      from "@/models/Conversation.cjs";
 import Message           from "@/models/Message.cjs";
 import User              from "@/models/User.cjs";
 
+export const dynamic = "force-dynamic";
+
 // GET — list all conversations for current user
 export async function GET(req) {
   const { user, error } = requireAuth(req);
