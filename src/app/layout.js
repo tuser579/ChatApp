@@ -1,30 +1,37 @@
 import "./globals.css";
 import { ThemeProvider } from "@/context/ThemeContext";
-import { Syne, DM_Sans } from "next/font/google";
+import { Inter } from "next/font/google";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 
-const syne = Syne({
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
-  variable: "--font-syne",
-});
-
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-  variable: "--font-dm-sans",
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const metadata = {
-  title: "NexChat",
-  description: "Real-time chat app",
+  title: "Telegram Web - Fast, Secure Messaging",
+  description: "Experience fast, cloud-synced, and encrypted messaging with audio/video calls, voice notes, stickers, and channels.",
+  applicationName: "Telegram Web",
+  authors: [{ name: "Telegram Web Team" }],
+  keywords: ["chat", "telegram", "messaging", "voice notes", "video call", "e2ee"],
+  icons: {
+    icon: "/favicon.ico",
+  },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#17212b",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" suppressHydrationWarning
-      className={`${syne.variable} ${dmSans.variable}`}>
-      <body>
+    <html lang="en" suppressHydrationWarning className={inter.className}>
+      <body className="antialiased">
         <ThemeProvider>
           <IncomingCallAlert />
           {children}

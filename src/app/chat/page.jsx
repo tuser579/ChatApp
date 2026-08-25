@@ -1,57 +1,68 @@
 // src/app/chat/page.jsx
 "use client";
-import { MessageCircle, ArrowRight } from "lucide-react";
+import { Send, Shield, Zap, Cloud, Sparkles } from "lucide-react";
 
 export default function ChatIndexPage() {
   return (
-    <div className="h-full flex flex-col items-center justify-center gap-6"
-      style={{ background: "var(--bg)" }}>
-
-      {/* Animated icon */}
+    <div
+      className="h-full flex flex-col items-center justify-center gap-6 p-6 select-none tg-chat-wallpaper"
+      style={{ background: "var(--tg-bg)" }}
+    >
+      {/* Telegram Badge */}
       <div className="relative">
-        <div className="w-24 h-24 rounded-3xl flex items-center justify-center"
+        <div
+          className="w-24 h-24 rounded-full flex items-center justify-center shadow-2xl"
           style={{
-            background: "linear-gradient(135deg,rgba(99,102,241,0.15),rgba(6,182,212,0.15))",
-            border: "1px solid rgba(99,102,241,0.2)",
-          }}>
-          <MessageCircle className="w-10 h-10" style={{ color: "var(--primary)" }} />
+            background: "linear-gradient(135deg,#3390ec,#2481cc)",
+          }}
+        >
+          <Send className="w-11 h-11 text-white ml-0.5" />
         </div>
 
-        {/* Ping rings */}
-        <div className="absolute inset-0 rounded-3xl animate-ping opacity-20"
-          style={{ background: "linear-gradient(135deg,#6366f1,#06b6d4)" }} />
+        <div
+          className="absolute -inset-2 rounded-full animate-ping opacity-15"
+          style={{ background: "var(--tg-accent)" }}
+        />
       </div>
 
-      {/* Text */}
-      <div className="text-center">
-        <h2 className="text-2xl font-bold mb-2"
-          style={{ fontFamily: "'Syne',sans-serif", color: "var(--fg)" }}>
-          Your conversations
+      {/* Title */}
+      <div className="text-center max-w-sm">
+        <span
+          className="px-4 py-1.5 rounded-full text-xs font-semibold shadow-sm backdrop-blur-md inline-block mb-3"
+          style={{
+            background: "var(--tg-date-badge)",
+            color: "var(--tg-date-fg)",
+          }}
+        >
+          Select a chat to start messaging
+        </span>
+        <h2 className="text-xl font-bold mb-1.5 text-[var(--tg-text)]">
+          Telegram Web
         </h2>
-        <p className="text-sm max-w-xs leading-relaxed"
-          style={{ color: "var(--fg-muted)" }}>
-          Select a chat from the sidebar to start messaging, or click
-          <span className="font-semibold" style={{ color: "var(--primary)" }}> + </span>
-          to start a new conversation.
+        <p className="text-xs leading-relaxed text-[var(--tg-text-muted)]">
+          Fast, secure, and synchronized across all your devices. Enjoy voice notes, stickers, channels, and instant calls.
         </p>
       </div>
 
-      {/* Feature hints */}
-      <div className="flex flex-col gap-2 mt-2">
+      {/* Feature Pills */}
+      <div className="grid grid-cols-2 gap-2.5 max-w-sm w-full">
         {[
-          { emoji: "💬", label: "Real-time messaging" },
-          { emoji: "📹", label: "Video & voice calls" },
-          { emoji: "📎", label: "Share files & media" },
-          { emoji: "🎙️", label: "Voice messages" },
-        ].map(item => (
-          <div key={item.label}
-            className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
+          { icon: <Zap className="w-4 h-4 text-amber-400" />, label: "Instant Messaging" },
+          { icon: <Cloud className="w-4 h-4 text-sky-400" />, label: "Saved Cloud Notes" },
+          { icon: <Sparkles className="w-4 h-4 text-purple-400" />, label: "Voice & Stickers" },
+          { icon: <Shield className="w-4 h-4 text-emerald-400" />, label: "Encrypted Calls" },
+        ].map((item, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition"
             style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-            }}>
-            <span className="text-lg">{item.emoji}</span>
-            <span className="text-sm" style={{ color: "var(--fg-muted)" }}>{item.label}</span>
+              background: "var(--tg-card)",
+              borderColor: "var(--tg-border)",
+              boxShadow: "var(--tg-shadow)",
+            }}
+          >
+            {item.icon}
+            <span className="text-xs font-medium text-[var(--tg-text)]">{item.label}</span>
           </div>
         ))}
       </div>

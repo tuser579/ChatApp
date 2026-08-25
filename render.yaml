@@ -2,7 +2,7 @@ services:
   - type: web
     name: nexchat-backend
     runtime: node
-    buildCommand: npm install
+    buildCommand: npm install && npm run build
     startCommand: node server.cjs
     envVars:
       - key: NODE_ENV

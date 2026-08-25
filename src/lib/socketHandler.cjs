@@ -23,22 +23,17 @@ module.exports = function socketHandler(io) {
     console.log(`🟢 Connected: ${userId} | socket: ${socket.id}`);
 
     // ── Re-deliver pending call on reconnect ───────────────────────────────
-    // ✅ FIX: Only re-deliver if the call is NOT already active (accepted)
-    // This prevents the /call page reconnect from triggering ringing again
     if (pendingCalls.has(userId)) {
       const pending = pendingCalls.get(userId);
       const age     = Date.now() - pending.timestamp;
 
       if (age < 60000 && !activeCalls.has(userId)) {
-        // ✅ FIX: Check if callee already accepted — if from is in activeCalls
-        // as a peer of userId, it means call was already answered, skip re-delivery
         const callAlreadyActive = activeCalls.get(userId) === pending.from ||
                                   activeCalls.get(pending.from) === userId;
 
         if (!callAlreadyActive) {
           console.log(`📞 Re-delivering pending call to ${userId} (${age}ms late)`);
           setTimeout(() => {
-            // ✅ FIX: Double-check again inside timeout — state may have changed
             if (pendingCalls.has(userId) && !activeCalls.has(userId)) {
               socket.emit("call:incoming", {
                 from:       pending.from,
@@ -47,25 +42,19 @@ module.exports = function socketHandler(io) {
                 offer:      pending.offer,
                 callType:   pending.callType,
               });
-              console.log(`   ✅ Re-delivered to socket: ${socket.id}`);
-            } else {
-              console.log(`   🚫 Skipped re-delivery — call already active or cleared`);
             }
           }, 3000);
-        } else {
-          console.log(`   🚫 Skipping re-delivery — call already accepted`);
         }
       } else if (age >= 60000) {
         pendingCalls.delete(userId);
-        console.log(`⏰ Pending call expired for ${userId}`);
       }
     }
 
     // ── Online status ──────────────────────────────────────────────────────
     try {
       await mongoConnect();
-      await User.findByIdAndUpdate(userId, { isOnline: true });
-      io.emit("user:online", { userId });
+      await User.findByIdAndUpdate(userId, { isOnline: true, lastSeen: new Date() });
+      io.emit("user:online", { userId, isOnline: true });
     } catch (e) { console.error("Online error:", e.message); }
 
     // ── Conversation room ──────────────────────────────────────────────────
@@ -74,9 +63,22 @@ module.exports = function socketHandler(io) {
       console.log(`📥 ${userId} joined room: ${conversationId}`);
     });
 
-    // ── Messages ───────────────────────────────────────────────────────────
+    socket.on("leave:conversation", (conversationId) => {
+      socket.leave(conversationId);
+      console.log(`📤 ${userId} left room: ${conversationId}`);
+    });
+
+    // ── Messages Send ──────────────────────────────────────────────────────
     socket.on("message:send", async ({
-      conversationId, content, type = "text", mediaUrl = "", fileName = "", replyTo = null
+      conversationId,
+      content,
+      type = "text",
+      mediaUrl = "",
+      fileName = "",
+      fileSize = "",
+      replyTo = null,
+      isForwarded = false,
+      forwardFrom = null,
     }) => {
       try {
         await mongoConnect();
@@ -84,19 +86,28 @@ module.exports = function socketHandler(io) {
           conversation: conversationId,
           sender:       userId,
           content:      content || "",
-          type, mediaUrl, fileName,
+          type,
+          mediaUrl,
+          fileName,
+          fileSize,
           replyTo:      replyTo || null,
+          isForwarded:  Boolean(isForwarded),
+          forwardFrom:  forwardFrom || undefined,
+          seen:         [userId],
         });
+
         await Conversation.findByIdAndUpdate(conversationId, {
           lastMessage: msg._id,
           updatedAt:   new Date(),
         });
+
         const populated = await Message.findById(msg._id)
           .populate("sender", "name avatar")
           .populate({
             path: "replyTo",
             populate: { path: "sender", select: "name avatar" }
           });
+
         io.to(conversationId).emit("message:new", populated.toObject());
 
         // Refresh conversation list for all participants
@@ -106,10 +117,100 @@ module.exports = function socketHandler(io) {
           updatedConvo.participants.forEach((p) => {
             const pid = p._id.toString();
             io.to(pid).emit("conversation:update");
-            console.log(`📢 conversation:update → user ${pid}`);
           });
         }
       } catch (e) { console.error("❌ message:send:", e.message); }
+    });
+
+    // ── Pin / Unpin Message ────────────────────────────────────────────────
+    socket.on("message:pin", async ({ messageId, conversationId }) => {
+      try {
+        await mongoConnect();
+        const msg = await Message.findById(messageId).populate("sender", "name avatar");
+        if (!msg) return;
+
+        msg.isPinned = true;
+        msg.pinnedAt = new Date();
+        await msg.save();
+
+        await Conversation.findByIdAndUpdate(conversationId, {
+          pinnedMessage: msg._id,
+          pinnedBy: userId,
+        });
+
+        io.to(conversationId).emit("message:pinned", {
+          message: msg.toObject(),
+          conversationId,
+          pinnedBy: userId,
+        });
+
+        io.emit("conversation:update");
+      } catch (e) { console.error("❌ message:pin:", e.message); }
+    });
+
+    socket.on("message:unpin", async ({ conversationId }) => {
+      try {
+        await mongoConnect();
+        const convo = await Conversation.findById(conversationId);
+        if (convo && convo.pinnedMessage) {
+          await Message.findByIdAndUpdate(convo.pinnedMessage, { isPinned: false });
+        }
+        await Conversation.findByIdAndUpdate(conversationId, {
+          pinnedMessage: null,
+          pinnedBy: null,
+        });
+
+        io.to(conversationId).emit("message:unpinned", { conversationId });
+        io.emit("conversation:update");
+      } catch (e) { console.error("❌ message:unpin:", e.message); }
+    });
+
+    // ── Forward Message ────────────────────────────────────────────────────
+    socket.on("message:forward", async ({
+      originalMessageId,
+      targetConversationIds = [],
+    }) => {
+      try {
+        await mongoConnect();
+        const origMsg = await Message.findById(originalMessageId).populate("sender", "name");
+        if (!origMsg) return;
+
+        const forwardFromName = origMsg.isForwarded && origMsg.forwardFrom?.name
+          ? origMsg.forwardFrom.name
+          : (origMsg.sender?.name || "User");
+
+        for (const targetId of targetConversationIds) {
+          const newMsg = await Message.create({
+            conversation: targetId,
+            sender:       userId,
+            content:      origMsg.content || "",
+            type:         origMsg.type || "text",
+            mediaUrl:     origMsg.mediaUrl || "",
+            fileName:     origMsg.fileName || "",
+            fileSize:     origMsg.fileSize || "",
+            isForwarded:  true,
+            forwardFrom:  { name: forwardFromName, userId: origMsg.sender?._id || origMsg.sender },
+            seen:         [userId],
+          });
+
+          await Conversation.findByIdAndUpdate(targetId, {
+            lastMessage: newMsg._id,
+            updatedAt:   new Date(),
+          });
+
+          const populated = await Message.findById(newMsg._id)
+            .populate("sender", "name avatar");
+
+          io.to(targetId).emit("message:new", populated.toObject());
+
+          const targetConvo = await Conversation.findById(targetId).populate("participants", "_id");
+          if (targetConvo) {
+            targetConvo.participants.forEach((p) => {
+              io.to(p._id.toString()).emit("conversation:update");
+            });
+          }
+        }
+      } catch (e) { console.error("❌ message:forward:", e.message); }
     });
 
     // ── Emoji Reactions ────────────────────────────────────────────────────
@@ -126,14 +227,11 @@ module.exports = function socketHandler(io) {
 
         if (existingIdx > -1) {
           if (msg.reactions[existingIdx].emoji === emoji) {
-            // Remove if clicked the same emoji again
             msg.reactions.splice(existingIdx, 1);
           } else {
-            // Change to new emoji
             msg.reactions[existingIdx].emoji = emoji;
           }
         } else {
-          // Add new reaction
           msg.reactions.push({ user: userId, emoji });
         }
 
@@ -189,7 +287,11 @@ module.exports = function socketHandler(io) {
       } catch (e) { console.error("❌ message:delete:", e.message); }
     });
 
-    // ── Typing ─────────────────────────────────────────────────────────────
+    // ── Telegram-style Typing & Actions (typing, recording_audio, uploading_file) ──
+    socket.on("typing:action", ({ conversationId, action = "typing" }) => {
+      socket.to(conversationId).emit("typing:action", { userId, conversationId, action });
+    });
+
     socket.on("typing:start", ({ conversationId }) =>
       socket.to(conversationId).emit("typing:start", { userId, conversationId }));
 
@@ -208,13 +310,9 @@ module.exports = function socketHandler(io) {
     // ════════════════════════════════════════════════════════════════════════
     // WEBRTC CALLS
     // ════════════════════════════════════════════════════════════════════════
-
-    // ── Step 1: Caller sends offer ─────────────────────────────────────────
     socket.on("call:offer", async ({ to, offer, callType }) => {
       try {
-        // ✅ FIX: Clear any stale pending from this caller's previous calls
         pendingCalls.delete(userId);
-
         await mongoConnect();
         const caller       = await User.findById(userId).select("name avatar");
         const callerName   = caller?.name   || "Unknown";
@@ -229,57 +327,33 @@ module.exports = function socketHandler(io) {
           timestamp:  Date.now(),
         };
 
-        console.log(`📞 call:offer: ${userId}(${callerName}) → ${to} | ${callType}`);
-
-        // Store as pending for reconnect handling
         pendingCalls.set(to, payload);
 
         const receiverSockets = userSockets.get(to);
         if (receiverSockets && receiverSockets.size > 0) {
           io.to(to).emit("call:incoming", payload);
-          console.log(`   ✅ Sent call:incoming to ${to}`);
-        } else {
-          console.log(`   ⏳ Receiver offline — stored as pending`);
         }
 
-        // Auto-expire pending after 60s
         setTimeout(() => {
-          if (pendingCalls.has(to) &&
-              pendingCalls.get(to).timestamp === payload.timestamp) {
+          if (pendingCalls.has(to) && pendingCalls.get(to).timestamp === payload.timestamp) {
             pendingCalls.delete(to);
-            console.log(`   🗑️ Pending call for ${to} expired after 60s`);
           }
         }, 60000);
-
       } catch (e) { console.error("call:offer error:", e.message); }
     });
 
-    // ── Step 2: Callee sends answer ────────────────────────────────────────
     socket.on("call:answer", ({ to, answer }) => {
-      console.log(`✅ call:answer: ${userId} → ${to}`);
-
-      // ✅ FIX: Delete pending for BOTH sides immediately on answer
-      // This is the key fix — once answered, pending must be gone
-      // so any reconnect does NOT re-deliver the call
       pendingCalls.delete(userId);
       pendingCalls.delete(to);
-
-      // Track active call for auto-cleanup on disconnect
       activeCalls.set(userId, to);
       activeCalls.set(to, userId);
-
       io.to(to).emit("call:answer", { answer });
     });
 
-    // ── Step 3: Signal peer connection is ready to receive ICE ────────────
     socket.on("call:ready", () => {
-      console.log(`🔔 call:ready: ${userId}`);
       readyUsers.add(userId);
-
-      // Flush any buffered ICE candidates
       if (iceBuffer.has(userId)) {
         const candidates = iceBuffer.get(userId);
-        console.log(`   🧊 Flushing ${candidates.length} ICE candidates to ${userId}`);
         candidates.forEach((candidate) => {
           socket.emit("call:ice-candidate", { candidate });
         });
@@ -287,111 +361,58 @@ module.exports = function socketHandler(io) {
       }
     });
 
-    // ── Step 4: ICE candidate exchange (both directions) ──────────────────
     socket.on("call:ice-candidate", ({ to, candidate }) => {
       if (readyUsers.has(to)) {
         io.to(to).emit("call:ice-candidate", { candidate });
       } else {
-        console.log(`   🧊 Buffering ICE candidate for ${to}`);
         if (!iceBuffer.has(to)) iceBuffer.set(to, []);
         iceBuffer.get(to).push(candidate);
       }
     });
 
-    // ── ✅ NEW: Callee ACKs the call — stop all re-delivery immediately ────
-    // Client emits this as soon as /call page loads
-    // { from: callerId }
-    socket.on("call:ack", ({ from }) => {
-      console.log(`📋 call:ack: ${userId} acknowledged call from ${from}`);
-
-      // ✅ Delete pending for callee — no more re-delivery ever
-      pendingCalls.delete(userId);
-
-      // ✅ Mark both sides active so reconnect guard works
-      activeCalls.set(userId, from);
-      activeCalls.set(from, userId);
-    });
-
-    // ── End call (graceful hang up) ────────────────────────────────────────
     socket.on("call:end", ({ to }) => {
-      console.log(`📵 call:end: ${userId} → ${to}`);
-      // ✅ FIX: Also clear pending for both on end
       pendingCalls.delete(userId);
       pendingCalls.delete(to);
-      _cleanupCall(userId, to);
-      io.to(to).emit("call:end");
+      activeCalls.delete(userId);
+      activeCalls.delete(to);
+      readyUsers.delete(userId);
+      readyUsers.delete(to);
+      iceBuffer.delete(userId);
+      iceBuffer.delete(to);
+      io.to(to).emit("call:ended");
     });
 
-    // ── Reject incoming call ───────────────────────────────────────────────
     socket.on("call:reject", ({ to }) => {
-      console.log(`🚫 call:reject: ${userId} → ${to}`);
       pendingCalls.delete(userId);
       pendingCalls.delete(to);
-      _cleanupCall(userId, to);
       io.to(to).emit("call:rejected");
-    });
-
-    // ── Caller cancelled before callee answered ────────────────────────────
-    socket.on("call:cancel", ({ to }) => {
-      console.log(`❌ call:cancel: ${userId} → ${to}`);
-      pendingCalls.delete(to);
-      pendingCalls.delete(userId);
-      _cleanupCall(userId, to);
-      io.to(to).emit("call:cancelled");
-    });
-
-    // ── Callee is busy (already in a call) ────────────────────────────────
-    socket.on("call:busy", ({ to }) => {
-      console.log(`📵 call:busy: ${userId} → ${to}`);
-      pendingCalls.delete(userId);
-      io.to(to).emit("call:busy");
     });
 
     // ── Disconnect ─────────────────────────────────────────────────────────
     socket.on("disconnect", async () => {
-      const socketSet = userSockets.get(userId);
-      socketSet?.delete(socket.id);
-      if (socketSet?.size === 0) userSockets.delete(userId);
+      const sockets = userSockets.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          userSockets.delete(userId);
+          readyUsers.delete(userId);
+          iceBuffer.delete(userId);
 
+          try {
+            await mongoConnect();
+            await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: new Date() });
+            io.emit("user:online", { userId, isOnline: false, lastSeen: new Date() });
+          } catch (e) {}
+
+          const peerId = activeCalls.get(userId);
+          if (peerId) {
+            io.to(peerId).emit("call:ended");
+            activeCalls.delete(userId);
+            activeCalls.delete(peerId);
+          }
+        }
+      }
       console.log(`🔴 Disconnected: ${userId} | socket: ${socket.id}`);
-
-      // ✅ FIX: Only auto-end call if ALL sockets for this user are gone
-      // This prevents ending the call when the user just reconnects a socket
-      if (!userSockets.has(userId) && activeCalls.has(userId)) {
-        const peerId = activeCalls.get(userId);
-        console.log(`⚠️ Abrupt disconnect during call — ending for peer: ${peerId}`);
-        io.to(peerId).emit("call:end");
-        _cleanupCall(userId, peerId);
-      }
-
-      readyUsers.delete(userId);
-
-      // ✅ FIX: Only delete iceBuffer if all sockets gone (reconnect needs buffer)
-      if (!userSockets.has(userId)) {
-        iceBuffer.delete(userId);
-      }
-
-      // Mark offline only when ALL sockets for this user are gone
-      if (!userSockets.has(userId)) {
-        try {
-          await mongoConnect();
-          await User.findByIdAndUpdate(userId, {
-            isOnline: false,
-            lastSeen: new Date(),
-          });
-          io.emit("user:offline", { userId, lastSeen: new Date() });
-        } catch (e) { console.error("Offline error:", e.message); }
-      }
     });
   });
 };
-
-// ── Helper: clean up all call state for two peers ─────────────────────────
-function _cleanupCall(userA, userB) {
-  activeCalls.delete(userA);
-  activeCalls.delete(userB);
-  readyUsers.delete(userA);
-  readyUsers.delete(userB);
-  iceBuffer.delete(userA);
-  iceBuffer.delete(userB);
-}

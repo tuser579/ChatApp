@@ -9,13 +9,19 @@ export async function GET(req) {
 
   const { searchParams } = new URL(req.url);
   const conversationId   = searchParams.get("conversationId");
+  const query            = searchParams.get("q");
 
   if (!conversationId)
     return NextResponse.json({ error: "conversationId required" }, { status: 400 });
 
   await mongoConnect();
 
-  const messages = await Message.find({ conversation: conversationId })
+  let filter = { conversation: conversationId };
+  if (query) {
+    filter.content = { $regex: query, $options: "i" };
+  }
+
+  const messages = await Message.find(filter)
     .populate("sender", "name avatar")
     .populate({
       path: "replyTo",

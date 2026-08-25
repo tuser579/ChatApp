@@ -1,27 +1,44 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  reactStrictMode: false,
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "res.cloudinary.com" },
+      { protocol: "https", hostname: "images.unsplash.com" },
+      { protocol: "https", hostname: "*.googleusercontent.com" },
+    ],
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "X-XSS-Protection", value: "1; mode=block" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
-    // In production on Vercel — proxy all /api and /socket.io to Render
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
-      || "https://nexchat-backend-az2d.onrender.com";
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
-    // ONLY proxy if we are on Vercel (the frontend)
-    // This prevents the backend (Render) from proxying to itself in an infinite loop (Error 508)
-    if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1") {
+    if (process.env.NODE_ENV !== "production" || process.env.VERCEL !== "1" || !backendUrl) {
       return [];
     }
 
     return {
       beforeFiles: [
         {
-          source:      "/api/:path*",
+          source: "/api/:path*",
           destination: `${backendUrl}/api/:path*`,
         },
         {
-          source:      "/socket.io/:path*",
+          source: "/socket.io/:path*",
           destination: `${backendUrl}/socket.io/:path*`,
         },
-      ]
+      ],
     };
   },
 };

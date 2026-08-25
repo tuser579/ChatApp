@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -12,93 +12,199 @@
   }
 }
 
-/* ── Dark theme (default) ── */
+/* ════════════════════════════════════════════════════════════════════════════
+   TELEGRAM THEME DESIGN TOKENS
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Dark theme (Telegram Dark / Night default) ── */
 :root,
 [data-theme="dark"] {
-  --bg:           #0a0e1a;
-  --bg-2:         #0f1628;
-  --bg-card:      #131929;
-  --bg-hover:     rgba(99,102,241,0.08);
-  --bg-active:    rgba(99,102,241,0.12);
-  --border:       rgba(255,255,255,0.07);
-  --fg:           #f1f5f9;
-  --fg-muted:     #94a3b8;
-  --fg-subtle:    #475569;
-  --primary:      #6366f1;
-  --primary-2:    #818cf8;
-  --success:      #22c55e;
-  --danger:       #ef4444;
-  --warning:      #f59e0b;
-  --bubble-me:    linear-gradient(135deg,#6366f1,#06b6d4);
-  --bubble-me-fg: #ffffff;
-  --bubble-them:  #1e293b;
-  --bubble-them-fg: #f1f5f9;
-  --shadow:       0 4px 24px rgba(0,0,0,0.4);
-  --shadow-lg:    0 8px 40px rgba(0,0,0,0.6);
+  --tg-bg:             #0e1621;
+  --tg-sidebar:        #17212b;
+  --tg-sidebar-hover:  #202b36;
+  --tg-sidebar-active: #2b5278;
+  --tg-header:         #17212b;
+  --tg-card:           #1e2c3a;
+  --tg-card-hover:     #253545;
+  --tg-border:         #131c26;
+  --tg-divider:        rgba(255, 255, 255, 0.08);
+
+  --tg-text:           #f5f5f5;
+  --tg-text-muted:     #708499;
+  --tg-text-subtle:    #556b82;
+  --tg-accent:         #3390ec;
+  --tg-accent-hover:   #2b7ec9;
+  --tg-accent-light:   rgba(51, 144, 236, 0.15);
+
+  --tg-bubble-me:      #2b5278;
+  --tg-bubble-me-fg:   #ffffff;
+  --tg-bubble-them:    #182533;
+  --tg-bubble-them-fg: #f5f5f5;
+
+  --tg-time-me:        #85aedb;
+  --tg-time-them:      #708499;
+  --tg-tick-seen:      #60b1ff;
+
+  --tg-input-bg:       #17212b;
+  --tg-input-border:   #131c26;
+
+  --tg-badge-bg:       #3390ec;
+  --tg-badge-fg:       #ffffff;
+  --tg-badge-muted:    #394a59;
+
+  --tg-date-badge:     rgba(16, 22, 30, 0.75);
+  --tg-date-fg:        #8ea0b4;
+
+  --tg-danger:         #ff595a;
+  --tg-success:        #4fae4e;
+  --tg-warning:        #e5a038;
+
+  --tg-shadow:         0 4px 20px rgba(0, 0, 0, 0.5);
+  --tg-shadow-lg:      0 12px 36px rgba(0, 0, 0, 0.65);
 }
 
-/* ── Light theme ── */
+/* ── Light theme (Telegram Classic Day) ── */
 [data-theme="light"] {
-  --bg:           #f0f4f8;
-  --bg-2:         #ffffff;
-  --bg-card:      #ffffff;
-  --bg-hover:     rgba(99,102,241,0.06);
-  --bg-active:    rgba(99,102,241,0.1);
-  --border:       rgba(0,0,0,0.08);
-  --fg:           #0f172a;
-  --fg-muted:     #475569;
-  --fg-subtle:    #94a3b8;
-  --primary:      #6366f1;
-  --primary-2:    #4f46e5;
-  --success:      #16a34a;
-  --danger:       #dc2626;
-  --warning:      #d97706;
-  --bubble-me:    linear-gradient(135deg,#6366f1,#06b6d4);
-  --bubble-me-fg: #ffffff;
-  --bubble-them:  #e2e8f0;
-  --bubble-them-fg: #0f172a;
-  --shadow:       0 4px 24px rgba(0,0,0,0.08);
-  --shadow-lg:    0 8px 40px rgba(0,0,0,0.15);
+  --tg-bg:             #0f141c; /* with doodle backdrop */
+  --tg-sidebar:        #ffffff;
+  --tg-sidebar-hover:  #f4f4f5;
+  --tg-sidebar-active: #e5f2fe;
+  --tg-header:         #ffffff;
+  --tg-card:           #ffffff;
+  --tg-card-hover:     #f8f9fa;
+  --tg-border:         #e2e4e8;
+  --tg-divider:        rgba(0, 0, 0, 0.06);
+
+  --tg-text:           #111827;
+  --tg-text-muted:     #707579;
+  --tg-text-subtle:    #9ca3af;
+  --tg-accent:         #2481cc;
+  --tg-accent-hover:   #1c6ab0;
+  --tg-accent-light:   rgba(36, 129, 204, 0.12);
+
+  --tg-bubble-me:      #eeffde;
+  --tg-bubble-me-fg:   #000000;
+  --tg-bubble-them:    #ffffff;
+  --tg-bubble-them-fg: #000000;
+
+  --tg-time-me:        #5da271;
+  --tg-time-them:      #a0a5ab;
+  --tg-tick-seen:      #3390ec;
+
+  --tg-input-bg:       #ffffff;
+  --tg-input-border:   #dfe2e6;
+
+  --tg-badge-bg:       #2481cc;
+  --tg-badge-fg:       #ffffff;
+  --tg-badge-muted:    #c4c9cc;
+
+  --tg-date-badge:     rgba(0, 0, 0, 0.35);
+  --tg-date-fg:        #ffffff;
+
+  --tg-danger:         #e53935;
+  --tg-success:        #43a047;
+  --tg-warning:        #fb8c00;
+
+  --tg-shadow:         0 2px 12px rgba(0, 0, 0, 0.08);
+  --tg-shadow-lg:      0 8px 30px rgba(0, 0, 0, 0.14);
 }
 
-/* ── Global styles ── */
+/* ════════════════════════════════════════════════════════════════════════════
+   GLOBAL STYLES & FONTS
+   ════════════════════════════════════════════════════════════════════════════ */
 body {
-  font-family: 'Inter', sans-serif;
-  background: var(--bg);
-  color: var(--fg);
+  font-family: 'Roboto', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-color: var(--tg-bg);
+  color: var(--tg-text);
   -webkit-font-smoothing: antialiased;
+  user-select: none;
 }
 
-input, textarea {
-  background:    var(--bg);
-  border:        1px solid var(--border);
-  color:         var(--fg);
-  outline:       none;
-  transition:    border-color 0.2s;
+/* Allow text selection in messages and inputs */
+.select-text, input, textarea {
+  user-select: text;
 }
 
-input:focus, textarea:focus {
-  border-color: var(--primary);
-  box-shadow:   0 0 0 3px rgba(99,102,241,0.12);
+/* ── Telegram Chat Doodle Background ── */
+.tg-chat-wallpaper {
+  background-color: var(--tg-bg);
+  background-image: 
+    radial-gradient(circle at 50% 50%, rgba(51, 144, 236, 0.04) 0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%233390ec' fill-opacity='0.03' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/svg%3E");
+  background-attachment: fixed;
 }
 
-input::placeholder, textarea::placeholder {
-  color: var(--fg-subtle);
+/* ── Telegram Message Tails ── */
+.tg-tail-out::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: -7px;
+  width: 14px;
+  height: 14px;
+  background: var(--tg-bubble-me);
+  clip-path: polygon(0 0, 0% 100%, 100% 100%);
+  border-bottom-right-radius: 4px;
 }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar       { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+.tg-tail-in::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -7px;
+  width: 14px;
+  height: 14px;
+  background: var(--tg-bubble-them);
+  clip-path: polygon(100% 0, 0% 100%, 100% 100%);
+  border-bottom-left-radius: 4px;
+}
 
-/* ── Spin animation ── */
+/* ── Custom Scrollbar (Telegram style) ── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 140, 160, 0.25);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 140, 160, 0.45);
+}
+
+/* ── Audio Waveform Visualizer Animation ── */
+@keyframes tgWave {
+  0%, 100% { height: 4px; }
+  50% { height: 18px; }
+}
+
+.tg-wave-bar {
+  width: 3px;
+  border-radius: 2px;
+  animation: tgWave 1.2s ease-in-out infinite;
+}
+
+.tg-wave-bar:nth-child(2) { animation-delay: 0.15s; }
+.tg-wave-bar:nth-child(3) { animation-delay: 0.3s; }
+.tg-wave-bar:nth-child(4) { animation-delay: 0.45s; }
+.tg-wave-bar:nth-child(5) { animation-delay: 0.6s; }
+.tg-wave-bar:nth-child(6) { animation-delay: 0.75s; }
+
+/* ── Telegram Pulse Ring ── */
+@keyframes tgPulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 0.4; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+.tg-recording-pulse {
+  animation: tgPulse 1.4s ease-in-out infinite;
+}
+
+/* ── Spin ── */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 .spin { animation: spin 0.8s linear infinite; }
-
-/* ── Bounce animation (typing dots) ── */
-@keyframes bounce3 {
-  0%, 100% { transform: translateY(0);    opacity: 0.4; }
-  50%       { transform: translateY(-4px); opacity: 1;   }
-}

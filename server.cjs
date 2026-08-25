@@ -11,7 +11,6 @@ const dev    = process.env.NODE_ENV !== "production";
 const app    = next({ dev });
 const handle = app.getRequestHandler();
 
-// Allow any Railway/Vercel domain or localhost
 const ALLOWED_ORIGIN = process.env.FRONTEND_URL || "*";
 
 app.prepare().then(() => {
@@ -33,14 +32,28 @@ app.prepare().then(() => {
     },
     pingTimeout:  60000,
     pingInterval: 25000,
+    maxHttpBufferSize: 1e8, // 100MB buffer for media streams
   });
 
   global.io = io;
   require("./src/lib/socketHandler.cjs")(io);
 
-  // Railway injects PORT automatically
   const PORT = process.env.PORT || 3000;
-  httpServer.listen(PORT, () => {
-    console.log(`✅ Server running on port ${PORT}`);
+  const server = httpServer.listen(PORT, () => {
+    console.log(`✅ [Production Server] Running on port ${PORT} (dev: ${dev})`);
   });
-});
+
+  // Graceful shutdown handling for Render / Railway / Docker
+  const handleShutdown = (signal) => {
+    console.log(`\n🛑 Received ${signal}, gracefully shutting down...`);
+    io.close(() => {
+      server.close(() => {
+        console.log("👋 Closed all active connections. Exiting process.");
+        process.exit(0);
+      });
+    });
+  };
+
+  process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+  process.on("SIGINT",  () => handleShutdown("SIGINT"));
+});
