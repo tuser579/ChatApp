@@ -17,6 +17,10 @@ export async function GET(req) {
 
   const messages = await Message.find({ conversation: conversationId })
     .populate("sender", "name avatar")
+    .populate({
+      path: "replyTo",
+      populate: { path: "sender", select: "name avatar" }
+    })
     .sort({ createdAt: 1 });
 
   return NextResponse.json({ messages });

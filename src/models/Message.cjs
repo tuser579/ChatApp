@@ -8,6 +8,14 @@ const MessageSchema = new mongoose.Schema({
   mediaUrl:     { type: String,  default: "" },
   fileName:     { type: String,  default: "" },
   seen:         [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  replyTo:      { type: mongoose.Schema.Types.ObjectId, ref: "Message", default: null },
+  reactions:    [{
+    user:  { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    emoji: { type: String, required: true },
+  }],
+  isEdited:     { type: Boolean, default: false },
+  isDeleted:    { type: Boolean, default: false },
+  editedAt:     { type: Date },
 }, { timestamps: true });
 
 module.exports = mongoose.models.Message || mongoose.model("Message", MessageSchema);

@@ -2,9 +2,12 @@ let socket        = null;
 let connecting    = null;
 let currentUserId = null;
 
-// ✅ Hardcoded Render URL as fallback
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL
-  || "https://nexchat-backend-az2d.onrender.com";
+// ✅ Auto-detect backend URL:
+// - In browser: use the same origin as the page (works for both local and prod)
+// - On server: fall back to env var
+const BACKEND_URL = typeof window !== "undefined"
+  ? (process.env.NEXT_PUBLIC_BACKEND_URL || window.location.origin)
+  : (process.env.NEXT_PUBLIC_BACKEND_URL || "https://nexchat-backend-az2d.onrender.com");
 
 export async function connectSocket(userId) {
   if (socket && socket.connected && currentUserId === userId) return socket;

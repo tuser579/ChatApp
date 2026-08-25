@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "node server.cjs",
-    "build": "next build --webpack",
+    "build": "next build",
     "start": "node server.cjs"
   },
   "engines": {

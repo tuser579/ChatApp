@@ -270,7 +270,15 @@ export default function ChatLayout({ children }) {
                           </span>
                         </div>
                         <p className="text-xs truncate" style={{ color:"var(--fg-muted)" }}>
-                          {convo.lastMessage?.content || "Start a conversation"}
+                          {convo.lastMessage?.isDeleted
+                            ? "🚫 This message was deleted"
+                            : convo.lastMessage?.type === "image"
+                            ? "📷 Photo"
+                            : convo.lastMessage?.type === "audio"
+                            ? "🎵 Voice message"
+                            : convo.lastMessage?.type === "file"
+                            ? `📄 ${convo.lastMessage?.fileName || "File"}`
+                            : convo.lastMessage?.content || "Start a conversation"}
                         </p>
                       </div>
                     </motion.div>

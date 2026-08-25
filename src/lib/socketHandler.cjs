@@ -76,7 +76,7 @@ module.exports = function socketHandler(io) {
 
     // ── Messages ───────────────────────────────────────────────────────────
     socket.on("message:send", async ({
-      conversationId, content, type = "text", mediaUrl = "", fileName = ""
+      conversationId, content, type = "text", mediaUrl = "", fileName = "", replyTo = null
     }) => {
       try {
         await mongoConnect();
@@ -85,23 +85,108 @@ module.exports = function socketHandler(io) {
           sender:       userId,
           content:      content || "",
           type, mediaUrl, fileName,
+          replyTo:      replyTo || null,
         });
         await Conversation.findByIdAndUpdate(conversationId, {
           lastMessage: msg._id,
           updatedAt:   new Date(),
         });
-        const populated = await msg.populate("sender", "name avatar");
+        const populated = await Message.findById(msg._id)
+          .populate("sender", "name avatar")
+          .populate({
+            path: "replyTo",
+            populate: { path: "sender", select: "name avatar" }
+          });
         io.to(conversationId).emit("message:new", populated.toObject());
 
         // Refresh conversation list for all participants
         const updatedConvo = await Conversation.findById(conversationId)
-          .populate("participants", "id");
+          .populate("participants", "_id name");
         if (updatedConvo) {
           updatedConvo.participants.forEach((p) => {
-            io.to(p._id.toString()).emit("conversation:update");
+            const pid = p._id.toString();
+            io.to(pid).emit("conversation:update");
+            console.log(`📢 conversation:update → user ${pid}`);
           });
         }
       } catch (e) { console.error("❌ message:send:", e.message); }
+    });
+
+    // ── Emoji Reactions ────────────────────────────────────────────────────
+    socket.on("message:react", async ({ messageId, conversationId, emoji }) => {
+      try {
+        await mongoConnect();
+        const msg = await Message.findById(messageId);
+        if (!msg) return;
+
+        if (!msg.reactions) msg.reactions = [];
+        const existingIdx = msg.reactions.findIndex(
+          (r) => r.user?.toString() === userId.toString()
+        );
+
+        if (existingIdx > -1) {
+          if (msg.reactions[existingIdx].emoji === emoji) {
+            // Remove if clicked the same emoji again
+            msg.reactions.splice(existingIdx, 1);
+          } else {
+            // Change to new emoji
+            msg.reactions[existingIdx].emoji = emoji;
+          }
+        } else {
+          // Add new reaction
+          msg.reactions.push({ user: userId, emoji });
+        }
+
+        await msg.save();
+        io.to(conversationId).emit("message:reaction_updated", {
+          messageId,
+          conversationId,
+          reactions: msg.reactions,
+        });
+      } catch (e) { console.error("❌ message:react:", e.message); }
+    });
+
+    // ── Edit Message ───────────────────────────────────────────────────────
+    socket.on("message:edit", async ({ messageId, conversationId, content }) => {
+      try {
+        await mongoConnect();
+        const msg = await Message.findById(messageId);
+        if (!msg || msg.sender.toString() !== userId.toString() || msg.isDeleted) return;
+
+        msg.content = content;
+        msg.isEdited = true;
+        msg.editedAt = new Date();
+        await msg.save();
+
+        io.to(conversationId).emit("message:edited", {
+          messageId,
+          conversationId,
+          content: msg.content,
+          isEdited: true,
+          editedAt: msg.editedAt,
+        });
+      } catch (e) { console.error("❌ message:edit:", e.message); }
+    });
+
+    // ── Delete Message (Delete for Everyone) ───────────────────────────────
+    socket.on("message:delete", async ({ messageId, conversationId }) => {
+      try {
+        await mongoConnect();
+        const msg = await Message.findById(messageId);
+        if (!msg || msg.sender.toString() !== userId.toString()) return;
+
+        msg.isDeleted = true;
+        msg.content = "";
+        msg.mediaUrl = "";
+        msg.fileName = "";
+        msg.reactions = [];
+        await msg.save();
+
+        io.to(conversationId).emit("message:deleted", {
+          messageId,
+          conversationId,
+        });
+      } catch (e) { console.error("❌ message:delete:", e.message); }
     });
 
     // ── Typing ─────────────────────────────────────────────────────────────
