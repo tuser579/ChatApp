@@ -326,7 +326,12 @@ function CallScreen() {
   }
 
   function buildPeer(targetId, socket, iceServers) {
-    const peer = new RTCPeerConnection({ iceServers });
+    const peer = new RTCPeerConnection({
+      iceServers,
+      iceCandidatePoolSize: 10,
+      bundlePolicy: "max-bundle",
+      rtcpMuxPolicy: "require",
+    });
     peerRef.current = peer;
 
     peer.ontrack = (e) => {
